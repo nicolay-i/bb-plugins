@@ -38,7 +38,7 @@
     "app": "./app.tsx"
   },
   "scripts": {
-    "build": "env -u BB_CLI bb plugin build .",
+    "build": "bb plugin build .",
     "dev": "bb plugin dev .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
