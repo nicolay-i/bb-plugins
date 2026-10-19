@@ -78,7 +78,7 @@ export default async function plugin(bb: BbPluginApi) {
   const files = new DocFiles(bb, dataDir);
   const htmlPages = new LeaseCache<{
     body: Buffer; compressed: Buffer; contentType: string; close(): void;
-  }>({ maxEntries: 2, idleMs: 5 * 60 * 1000 });
+  }>({ maxEntries: 2, idleMs: 5 * 60 * 1000, maxAgeMs: 55 * 60 * 1000 });
   bb.onDispose(() => htmlPages.clear());
   const renderer = new Renderer(dataDir);
 
@@ -249,7 +249,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (!doc || doc.kind !== "html") return context.text("Not found", 404);
     try {
       // Cached bytes are an immutable document version. Polling opens the new version.
-      const key = JSON.stringify([doc.id, wanted, Math.floor(Date.now() / (5 * 60 * 1000))]);
+      const key = JSON.stringify([doc.id, wanted]);
       return await htmlPages.use(key, async () => {
         const version = await currentVersion(doc);
         if (version !== wanted) throw new Error("This page changed; reload it.");

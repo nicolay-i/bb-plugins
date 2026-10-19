@@ -217,9 +217,11 @@ npm run dev        # rebuild + reload on save
 
 For local development, install this directory with `bb plugin install path:. --yes`
 first. These commands work in PowerShell as well as Unix shells. If the bb
-server runs on another machine, keep a checkout there, install that checkout's
-path, and run the dev watcher there. Transfer committed changes with Git; the
-watcher rebuilds and reloads the plugin when that checkout changes.
+server runs on another machine, keep a checkout there and install that checkout's
+path. Transfer committed changes with Git. To keep builds off the server, build
+on the development machine, copy the generated `dist` directory into the server's
+checkout, and run `bb plugin reload doc-review`. A watcher is optional and builds
+on the machine where it runs.
 
 ### Local links in HTML reports
 
@@ -237,8 +239,10 @@ starts immediately. Sending comments to a new chat starts that new chat.
 ### Remote document performance
 
 Version checks use file size and modification/change timestamps on the file's
-own machine through the plugin's host entry. They do not read or transfer the
-document body. The visible panel checks every four seconds, with at most one
+own machine through the plugin's host entry. Native directory watches invalidate
+cached versions; host disconnects, reconnects and worker exits clear the cache.
+Watches expire after five minutes and are limited to 64 files. Checks do not read
+or transfer the document body. The visible panel checks every four seconds, with at most one
 request in flight; closed documents ignore late responses. Permission and
 connection errors remain errors. HTML content is read once when its page is
 served, including any embedded images. Files whose content and filesystem
@@ -247,8 +251,9 @@ by this metadata check.
 
 HTML opens directly from the URL returned by `doc.open`, without another
 `doc.html` RPC. The server reuses up to two prepared document versions for
-five-minute windows and negotiates gzip for the response. Each open still
-checks current file metadata; a changed version gets a different URL and body.
+five minutes of inactivity and negotiates gzip for the response. Active entries
+expire after 55 minutes, before their one-hour folder preview leases. Each open still checks
+host connectivity and the watched version; a changed version gets a different URL and body.
 Responses retain the HTML sandbox, `nosniff`, and `no-store`. The cache holds
 immutable versions, not an offline copy of the latest file. A first open of a
 remote file still depends on the host connection and transfer speed.

@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import plugin from "../server";
 
 it("reuses one version, compresses it, and reloads changed versions", async () => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(299999);
   const db = new DatabaseSync(":memory:");
   Object.assign(db, { name: path.resolve("../../../../.tmp/doc-review-dev/route-test.db") });
   const dispose: Array<() => void> = [];
@@ -42,6 +43,9 @@ it("reuses one version, compresses it, and reloads changed versions", async () =
     const plain = await get("v1", "gzip;q=0");
     expect(plain.headers.get("content-encoding")).toBeNull();
     expect(await plain.text()).toBe(original);
+    clock.mockReturnValue(300001);
+    expect(await (await get("v1", "identity")).text()).toBe(original);
+    expect(read).toHaveBeenCalledTimes(1);
     version = "v2";
     const hostChanged = (bb.sdk.subscribe as ReturnType<typeof vi.fn>).mock.calls.find(([arg]) => arg.event === "host:changed")![0];
     hostChanged.callback();
@@ -50,6 +54,7 @@ it("reuses one version, compresses it, and reloads changed versions", async () =
     expect(await changed.text()).toContain("v2");
     expect(read).toHaveBeenCalledTimes(2);
   } finally {
+    clock.mockRestore();
     dispose.forEach((fn) => fn());
     db.close();
   }
