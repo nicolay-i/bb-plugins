@@ -220,3 +220,12 @@ first. These commands work in PowerShell as well as Unix shells. If the bb
 server runs on another machine, keep a checkout there, install that checkout's
 path, and run the dev watcher there. Transfer committed changes with Git; the
 watcher rebuilds and reloads the plugin when that checkout changes.
+
+### Local links in HTML reports
+
+In Text mode, relative file links open in BB's preview panel on the report's
+host, including links with `target="_blank"`. Paths are relative to the HTML
+file: `other.html`, `../screens/example.png`, or `../../src/app.ts#L12`.
+Spaces and percent-encoded names are supported; `:12:3` and `#L12C3` select a
+line and column in code. Links to `#section` scroll inside the report.
+External URLs and download links keep their ordinary browser behavior.

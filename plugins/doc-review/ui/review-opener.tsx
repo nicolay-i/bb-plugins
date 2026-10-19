@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import {
   useBbContext,
   useBbNavigate,
+  useSdk,
   type PluginFileOpenerProps,
   type PluginFileOpenerSource,
 } from "@get-bb/plugin-sdk/app";
@@ -40,6 +41,7 @@ import {
 } from "../src/types";
 import { CommentEditor } from "./comment-editor";
 import { CommentList, type CommentActions } from "./comment-list";
+import { htmlFileLink } from "./html-links";
 import { HtmlDoc } from "./html-doc";
 import { MarkdownDoc, type MarkdownDocument, type Point } from "./markdown-doc";
 import { documentRoot } from "./md-blocks";
@@ -302,6 +304,7 @@ export function Workspace({
 }) {
   const rpc = useReviewRpc();
   const navigate = useBbNavigate();
+  const sdk = useSdk();
   const context = useBbContext();
   const threadId = context.threadId ?? source.threadId ?? null;
   // Keyed on values: a new object would re-render every Markdown block.
@@ -583,6 +586,17 @@ export function Workspace({
     />
   ) : content.kind === "html" ? (
     <HtmlDoc
+      onOpenFile={(href) => {
+        const target = htmlFileLink(href, doc.absPath);
+        if (!target) { toast.error("Invalid relative file link."); return; }
+        void (async () => {
+          const hostId = doc.hostId ?? (await sdk.system.config()).primaryHostId;
+          if (!hostId || !navigate.experimental_openFilePreview({
+            target: { kind: "host", hostId, path: target.path },
+            location: target.location,
+          })) throw new Error("Could not open this file in BB.");
+        })().catch((error: unknown) => toast.error(errorText(error)));
+      }}
       url={content.url}
       name={doc.name}
       mode={mode}

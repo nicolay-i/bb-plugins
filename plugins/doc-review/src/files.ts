@@ -92,7 +92,8 @@ export class DocFiles {
     }
     // "~/…" is a convenience for paths typed on the Doc Review page.
     if (rawPath === "~" || rawPath.startsWith("~/")) rawPath = path.posix.join(homedir(), rawPath.slice(1));
-    if (!path.posix.isAbsolute(rawPath)) throw new Error("Expected an absolute path.");
+    const windowsPath = path.win32.isAbsolute(rawPath) && !path.posix.isAbsolute(rawPath);
+    if (!windowsPath && !path.posix.isAbsolute(rawPath)) throw new Error("Expected an absolute path.");
     let hostId: string | null = source.experimental_hostId ?? null;
     if (!hostId && source.environmentId) {
       const environment = await this.bb.sdk.environments.get({
@@ -100,7 +101,10 @@ export class DocFiles {
       });
       hostId = environment.hostId;
     }
-    return { absPath: path.posix.normalize(rawPath), hostId: await this.canonicalHost(hostId) };
+    return {
+      absPath: windowsPath ? path.win32.normalize(rawPath).replace(/\\/g, "/") : path.posix.normalize(rawPath),
+      hostId: await this.canonicalHost(hostId),
+    };
   }
 
   /**

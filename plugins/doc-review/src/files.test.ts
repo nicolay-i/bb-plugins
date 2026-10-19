@@ -23,3 +23,10 @@ describe("DocFiles.version on another host", () => {
     await expect(new DocFiles(bb, ".tmp").version(doc)).rejects.toBe(error);
   });
 });
+
+it("resolves a Windows host file on a Mac/Linux server", async () => {
+  const bb = { sdk: { system: { config: async () => ({ primaryHostId: "host-mac" }) } } } as unknown as BbPluginApi;
+  expect(await new DocFiles(bb, ".tmp").resolve("D:/Documents/Projects/peptides/.tmp/reports/../audit.html", {
+    kind: "host", experimental_hostId: "host-windows", threadId: null, environmentId: null, projectId: null,
+  })).toEqual({ absPath: "D:/Documents/Projects/peptides/.tmp/audit.html", hostId: "host-windows" });
+});
