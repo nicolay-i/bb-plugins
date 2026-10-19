@@ -77,3 +77,17 @@ it("resumes polling after a failed request and skips hidden documents", async ()
   expect(state.call).toHaveBeenCalledTimes(2);
   expect(update).not.toHaveBeenCalled();
 });
+
+it("advances the HTML URL together with the file version", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", globalThis);
+  vi.stubGlobal("document", { visibilityState: "visible" });
+  state.call.mockResolvedValue({ version: "new version" });
+  const doc = { id: "report", version: "old", htmlUrl: "/html?doc=report&v=old" } as ReviewDoc;
+  const update = vi.fn();
+  useDocVersion(doc, update);
+  await vi.advanceTimersByTimeAsync(4000);
+  const changed = update.mock.calls[0][0](doc);
+  expect(changed.version).toBe("new version");
+  expect(changed.htmlUrl).toBe("/html?doc=report&v=new%20version");
+});

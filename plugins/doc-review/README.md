@@ -244,3 +244,11 @@ connection errors remain errors. HTML content is read once when its page is
 served, including any embedded images. Files whose content and filesystem
 metadata are deliberately restored to identical values cannot be distinguished
 by this metadata check.
+
+HTML opens directly from the URL returned by `doc.open`, without another
+`doc.html` RPC. The server reuses up to two prepared document versions for
+five-minute windows and negotiates gzip for the response. Each open still
+checks current file metadata; a changed version gets a different URL and body.
+Responses retain the HTML sandbox, `nosniff`, and `no-store`. The cache holds
+immutable versions, not an offline copy of the latest file. A first open of a
+remote file still depends on the host connection and transfer speed.

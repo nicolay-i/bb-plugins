@@ -70,7 +70,11 @@ export function useDocVersion(doc: ReviewDoc | null, setDoc: Dispatch<SetStateAc
         (result) => {
           if (alive && result.version && result.version !== version) {
             setDoc((current) =>
-              current && current.id === docId ? { ...current, version: result.version! } : current,
+              current && current.id === docId ? {
+                ...current,
+                version: result.version!,
+                htmlUrl: current.htmlUrl?.replace(/([?&]v=)[^&]*/, (_match, prefix: string) => prefix + encodeURIComponent(result.version!)) ?? null,
+              } : current,
             );
           }
         },
