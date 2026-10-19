@@ -8,6 +8,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import type { openerSourceSchema } from "./contract.js";
 import type { DocRow } from "./store.js";
+import { fileVersion } from "./file-version.js";
+import { hostContract } from "./host-contract.js";
 
 export type OpenerSource = z.infer<typeof openerSourceSchema>;
 
@@ -107,18 +109,12 @@ export class DocFiles {
     };
   }
 
-  /**
-   * A cheap change token. Local files use size and mtime; remote files use
-   * the content hash bb reports.
-   */
+  /** Metadata only, on the machine that owns the file. */
   async version(doc: DocRow): Promise<string | null> {
-    if (doc.hostId === null) {
-      const info = await stat(doc.absPath).catch(() => null);
-      if (!info?.isFile()) return null;
-      return `m${Math.round(info.mtimeMs)}-s${info.size}`;
-    }
-    const file = await this.bb.sdk.files.read({ hostId: doc.hostId, path: doc.absPath });
-    return `h${file.sha256.slice(0, 16)}`;
+    if (doc.hostId === null) return fileVersion(doc.absPath);
+    return this.bb.hosts.experimental_client({ contract: hostContract }).call(
+      "fileVersion", { path: doc.absPath }, { hostId: doc.hostId },
+    );
   }
 
   /** The file's bytes, from this machine or the host it lives on. */

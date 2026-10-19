@@ -9,17 +9,19 @@ const doc = {
 } as DocRow;
 
 describe("DocFiles.version on another host", () => {
-  it("reads the file from its host and uses its content hash", async () => {
-    const read = vi.fn().mockResolvedValue({ sha256: "0123456789abcdef0123456789abcdef" });
-    const bb = { sdk: { files: { read } } } as unknown as BbPluginApi;
-    expect(await new DocFiles(bb, ".tmp").version(doc)).toBe("h0123456789abcdef");
-    expect(read).toHaveBeenCalledWith({ hostId: doc.hostId, path: doc.absPath });
+  it("requests only metadata from the file's host", async () => {
+    const call = vi.fn().mockResolvedValue("m123-c456-s3000000");
+    const read = vi.fn();
+    const bb = { hosts: { experimental_client: () => ({ call }) }, sdk: { files: { read } } } as unknown as BbPluginApi;
+    expect(await new DocFiles(bb, ".tmp").version(doc)).toBe("m123-c456-s3000000");
+    expect(call).toHaveBeenCalledWith("fileVersion", { path: doc.absPath }, { hostId: doc.hostId });
+    expect(read).not.toHaveBeenCalled();
   });
 
-  it("preserves read failures instead of claiming the file is gone", async () => {
+  it("preserves host failures instead of claiming the file is gone", async () => {
     const error = new Error("Host is disconnected");
-    const read = vi.fn().mockRejectedValue(error);
-    const bb = { sdk: { files: { read } } } as unknown as BbPluginApi;
+    const call = vi.fn().mockRejectedValue(error);
+    const bb = { hosts: { experimental_client: () => ({ call }) } } as unknown as BbPluginApi;
     await expect(new DocFiles(bb, ".tmp").version(doc)).rejects.toBe(error);
   });
 });
