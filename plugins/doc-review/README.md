@@ -210,7 +210,13 @@ bb doc-review reply <id> --note "question or reason"
 ```sh
 npm install
 npm test           # vitest: formats, conversions, caches, workbook readers, anchors
-npx tsc --noEmit
-bb plugin build .
-bb plugin dev .    # rebuild + reload on save
+npm run typecheck
+npm run build
+npm run dev        # rebuild + reload on save
 ```
+
+For local development, install this directory with `bb plugin install path:. --yes`
+first. These commands work in PowerShell as well as Unix shells. If the bb
+server runs on another machine, keep a checkout there, install that checkout's
+path, and run the dev watcher there. Transfer committed changes with Git; the
+watcher rebuilds and reloads the plugin when that checkout changes.
