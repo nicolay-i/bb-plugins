@@ -113,10 +113,8 @@ export class DocFiles {
       if (!info?.isFile()) return null;
       return `m${Math.round(info.mtimeMs)}-s${info.size}`;
     }
-    const file = await this.bb.sdk.files
-      .read({ hostId: doc.hostId, path: doc.absPath })
-      .catch(() => null);
-    return file ? `h${file.sha256.slice(0, 16)}` : null;
+    const file = await this.bb.sdk.files.read({ hostId: doc.hostId, path: doc.absPath });
+    return `h${file.sha256.slice(0, 16)}`;
   }
 
   /** The file's bytes, from this machine or the host it lives on. */
