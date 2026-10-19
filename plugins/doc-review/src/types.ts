@@ -168,6 +168,7 @@ export interface ReviewDoc {
   /** Null when the file lives on the bb server's own machine. */
   hostId: string | null;
   version: string;
+  htmlUrl: string | null;
 }
 
 export interface PageInfo {

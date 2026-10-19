@@ -159,6 +159,7 @@ const docSchema = z.object({
   absPath: z.string(),
   hostId: z.string().nullable(),
   version: z.string(),
+  htmlUrl: z.string().nullable(),
 });
 
 export const openerSourceSchema = z

@@ -116,7 +116,8 @@ function useDocContent(doc: ReviewDoc) {
         return { kind: "md", ...(await rpc.call("doc.markdown", { docId: doc.id })) };
       }
       if (doc.kind === "html") {
-        return { kind: "html", ...(await rpc.call("doc.html", { docId: doc.id })) };
+        if (!doc.htmlUrl) throw new Error("Missing HTML document URL.");
+        return { kind: "html", version: doc.version, url: doc.htmlUrl };
       }
       if (doc.kind === "spreadsheet") {
         const opened = await rpc.call("sheet.open", { docId: doc.id, locale: navigator.language || "en-US" });

@@ -9,6 +9,9 @@
 // in this plugin's SQLite database; the reviewed file is never modified by
 // the plugin. Agents report back with the `bb doc-review` command, and every
 // change reaches open panels through a realtime signal.
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
+import { LeaseCache } from "./src/lease-cache.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -47,6 +50,7 @@ const CHANGED = "review-changed";
 const PAGE_ROUTE = "/page";
 const HTML_ROUTE = "/html";
 const DRAWING_ROUTE = "/drawing";
+const gzipAsync = promisify(gzip);
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** The largest HTML page served into the review frame. */
 const HTML_MAX_BYTES = 20 * 1024 * 1024;
@@ -72,6 +76,10 @@ export default async function plugin(bb: BbPluginApi) {
   const store = new ReviewStore(database as unknown as Db);
   const dataDir = path.dirname(database.name);
   const files = new DocFiles(bb, dataDir);
+  const htmlPages = new LeaseCache<{
+    body: Buffer; compressed: Buffer; contentType: string; close(): void;
+  }>({ maxEntries: 2, idleMs: 5 * 60 * 1000 });
+  bb.onDispose(() => htmlPages.clear());
   const renderer = new Renderer(dataDir);
 
   const settings = bb.settings.define({
@@ -162,6 +170,7 @@ export default async function plugin(bb: BbPluginApi) {
       absPath: doc.absPath,
       hostId: doc.hostId,
       version,
+      htmlUrl: doc.kind === "html" ? `/api/v1/plugins/${bb.pluginId}/http${HTML_ROUTE}?doc=${doc.id}&v=${encodeURIComponent(version)}` : null,
     };
   }
 
@@ -239,24 +248,36 @@ export default async function plugin(bb: BbPluginApi) {
     const doc = store.getDoc(docId);
     if (!doc || doc.kind !== "html") return context.text("Not found", 404);
     try {
-      const version = await currentVersion(doc);
-      if (version !== wanted) return context.text("This page changed; reload it.", 404);
-      const [source, baseUrl] = await Promise.all([
-        files.readBytes(doc, HTML_MAX_BYTES),
-        files.assetBaseUrl(doc),
-      ]);
-      const page = injectIntoHtml(source, {
-        baseHref: baseUrl ? `${baseUrl.replace(/\/+$/, "")}/` : null,
-        script: BRIDGE_SCRIPT,
-      });
-      return new Response(new Uint8Array(page.body), {
-        headers: {
-          "content-type": page.contentType,
-          "content-security-policy": `sandbox ${HTML_SANDBOX}`,
-          "cache-control": "no-store",
-          "x-content-type-options": "nosniff",
-          "referrer-policy": "no-referrer",
-        },
+      // Cached bytes are an immutable document version. Polling opens the new version.
+      const key = JSON.stringify([doc.id, wanted, Math.floor(Date.now() / (5 * 60 * 1000))]);
+      return await htmlPages.use(key, async () => {
+        const version = await currentVersion(doc);
+        if (version !== wanted) throw new Error("This page changed; reload it.");
+        const [source, baseUrl] = await Promise.all([
+          files.readBytes(doc, HTML_MAX_BYTES), files.assetBaseUrl(doc),
+        ]);
+        const page = injectIntoHtml(source, {
+          baseHref: baseUrl ? `${baseUrl.replace(/\/+$/, "")}/` : null,
+          script: BRIDGE_SCRIPT,
+        });
+        return { ...page, compressed: await gzipAsync(page.body), close() {} };
+      }, async (page) => {
+        const compressed = (context.req.header("accept-encoding") ?? "").split(",").some((entry) => {
+          const [coding, ...parameters] = entry.trim().toLowerCase().split(";");
+          const quality = parameters.map((p) => p.trim()).find((p) => p.startsWith("q="));
+          return coding === "gzip" && (!quality || Number(quality.slice(2)) > 0);
+        });
+        return new Response(new Uint8Array(compressed ? page.compressed : page.body), {
+          headers: {
+            "content-type": page.contentType,
+            "content-security-policy": `sandbox ${HTML_SANDBOX}`,
+            "cache-control": "no-store",
+            "vary": "Accept-Encoding",
+            ...(compressed ? { "content-encoding": "gzip" } : {}),
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+          },
+        });
       });
     } catch (error) {
       bb.log.warn(`html page ${doc.absPath}: ${String(error)}`);
