@@ -15,6 +15,10 @@ export default experimental_defineHostEntry({
         if (watches.size >= 64) await watches.values().next().value!.close();
         const subscription = await context.experimental_watch({ rootPath: path.dirname(filePath), debounceMs: 25, maxWaitMs: 100 }, async (event) => {
           if (event.kind === "watch-error") { await watches.get(filePath)?.close(); return; }
+          if (event.kind === "changed" && !event.changes.some((change) => {
+            const relative = path.relative(path.resolve(path.dirname(filePath), change.path), filePath);
+            return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+          })) return;
           await context.experimental_emitSignal("changed", { path: filePath });
         });
         const timer = setTimeout(() => { void entry.close().catch((error) => console.error("Doc Review watcher cleanup failed:", error)); }, 5 * 60 * 1000);

@@ -19,8 +19,14 @@ it("subscribes once, emits invalidation and releases native watchers", async () 
     const b = await host.handlers.fileVersion({ path: file }, context);
     expect(a).toBe(b);
     expect(watch).toHaveBeenCalledTimes(1);
+    await watch.mock.calls[0][1]({ kind: "changed", changes: [{ path: "other.html", type: "update" }] });
+    expect(emit).not.toHaveBeenCalled();
     await watch.mock.calls[0][1]({ kind: "changed", changes: [{ path: "doc.html", type: "update" }] });
     expect(emit).toHaveBeenCalledWith("changed", { path: file });
+    await watch.mock.calls[0][1]({ kind: "changed", changes: [{ path: file, type: "delete" }] });
+    await watch.mock.calls[0][1]({ kind: "changed", changes: [{ path: root, type: "delete" }] });
+    await watch.mock.calls[0][1]({ kind: "rescan-required" });
+    expect(emit).toHaveBeenCalledTimes(4);
     await watch.mock.calls[0][1]({ kind: "watch-error", message: "Native watcher failed" });
     expect(dispose).toHaveBeenCalledTimes(1);
     await host.handlers.fileVersion({ path: file }, context);
