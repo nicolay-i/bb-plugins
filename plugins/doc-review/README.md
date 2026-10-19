@@ -233,3 +233,14 @@ External URLs and download links keep their ordinary browser behavior.
 Comments sent to the current chat use queued delivery: if the agent is busy,
 the message waits until its current work finishes. If the chat is idle, it
 starts immediately. Sending comments to a new chat starts that new chat.
+
+### Remote document performance
+
+Version checks use file size and modification/change timestamps on the file's
+own machine through the plugin's host entry. They do not read or transfer the
+document body. The visible panel checks every four seconds, with at most one
+request in flight; closed documents ignore late responses. Permission and
+connection errors remain errors. HTML content is read once when its page is
+served, including any embedded images. Files whose content and filesystem
+metadata are deliberately restored to identical values cannot be distinguished
+by this metadata check.

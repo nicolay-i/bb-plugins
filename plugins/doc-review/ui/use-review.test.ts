@@ -60,3 +60,20 @@ it("ignores a response from a document that has been closed", async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(update).not.toHaveBeenCalled();
 });
+
+it("resumes polling after a failed request and skips hidden documents", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", globalThis);
+  const page = { visibilityState: "hidden" };
+  vi.stubGlobal("document", page);
+  state.call.mockRejectedValueOnce(new Error("Disconnected"))
+    .mockResolvedValue({ version: "old" });
+  const update = vi.fn();
+  useDocVersion({ id: "report", version: "old" } as ReviewDoc, update);
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(state.call).not.toHaveBeenCalled();
+  page.visibilityState = "visible";
+  await vi.advanceTimersByTimeAsync(8000);
+  expect(state.call).toHaveBeenCalledTimes(2);
+  expect(update).not.toHaveBeenCalled();
+});
