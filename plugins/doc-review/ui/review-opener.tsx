@@ -243,7 +243,7 @@ function SendMenu({
           >
             <span>To this chat</span>
             <span className="text-xs text-muted-foreground">
-              {canSendHere ? "The agent here gets them as the next message" : "Open the file from a chat to use this"}
+              {canSendHere ? "Queued until the agent finishes its current work" : "Open the file from a chat to use this"}
             </span>
           </button>
           <button

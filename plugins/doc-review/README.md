@@ -229,3 +229,7 @@ file: `other.html`, `../screens/example.png`, or `../../src/app.ts#L12`.
 Spaces and percent-encoded names are supported; `:12:3` and `#L12C3` select a
 line and column in code. Links to `#section` scroll inside the report.
 External URLs and download links keep their ordinary browser behavior.
+
+Comments sent to the current chat use queued delivery: if the agent is busy,
+the message waits until its current work finishes. If the chat is idle, it
+starts immediately. Sending comments to a new chat starts that new chat.

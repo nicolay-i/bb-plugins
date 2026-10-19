@@ -586,7 +586,7 @@ export default async function plugin(bb: BbPluginApi) {
 
       let threadId: string;
       if (target.kind === "thread") {
-        await bb.sdk.threads.send({ threadId: target.threadId, mode: "auto", input });
+        await bb.sdk.threads.send({ threadId: target.threadId, mode: "queue-if-active", input });
         threadId = target.threadId;
       } else {
         // Reuse the model and workspace of the thread the panel was opened in.
