@@ -18,8 +18,8 @@ it("reuses one version, compresses it, and reloads changed versions", async () =
     pluginId: "doc-review", onDispose: (fn: () => void) => dispose.push(fn),
     storage: { database: () => db, migrate: (_db: unknown, statements: string[]) => statements.forEach((s) => db.exec(s)) },
     settings: { define: () => ({ get: async () => ({ rememberRecents: true, libreOfficePath: "", chromePath: "" }) }) },
-    hosts: { experimental_client: () => ({ call }) },
-    sdk: { system: { config: async () => ({ primaryHostId: "server" }) }, files: { read, createPreview: vi.fn(async () => ({ baseUrl: "/preview/fixture/" })) } },
+    hosts: { experimental_client: () => ({ call, experimental_onSignal: vi.fn(() => vi.fn()), experimental_onWorkerExit: vi.fn(() => vi.fn()) }) },
+    sdk: { subscribe: vi.fn(() => vi.fn()), hosts: { get: vi.fn(async () => ({ status: "connected" })) }, system: { config: async () => ({ primaryHostId: "server" }) }, files: { read, createPreview: vi.fn(async () => ({ baseUrl: "/preview/fixture/" })) } },
     http: { route: (_method: string, route: string, handler: any) => routes.set(route, handler) },
     rpc: { register: (_contract: unknown, registered: any) => { handlers = registered; } },
     cli: { register: vi.fn() }, log: { warn: vi.fn() },
@@ -43,6 +43,8 @@ it("reuses one version, compresses it, and reloads changed versions", async () =
     expect(plain.headers.get("content-encoding")).toBeNull();
     expect(await plain.text()).toBe(original);
     version = "v2";
+    const hostChanged = (bb.sdk.subscribe as ReturnType<typeof vi.fn>).mock.calls.find(([arg]) => arg.event === "host:changed")![0];
+    hostChanged.callback();
     expect((await open()).doc.htmlUrl).toContain("v=v2");
     const changed = await get("v2", "identity");
     expect(await changed.text()).toContain("v2");

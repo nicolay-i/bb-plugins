@@ -7,3 +7,5 @@ export const hostContract = defineRpcContract({
     output: z.string().nullable(),
   },
 });
+
+export const hostSignals = { changed: { payload: z.object({ path: z.string() }).strict() } };

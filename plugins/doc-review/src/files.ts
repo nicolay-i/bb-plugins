@@ -9,7 +9,7 @@ import type { z } from "zod";
 import type { openerSourceSchema } from "./contract.js";
 import type { DocRow } from "./store.js";
 import { fileVersion } from "./file-version.js";
-import { hostContract } from "./host-contract.js";
+import { hostContract, hostSignals } from "./host-contract.js";
 
 export type OpenerSource = z.infer<typeof openerSourceSchema>;
 
@@ -26,6 +26,29 @@ export function joinPath(root: string, relative: string): string {
 
 export class DocFiles {
   private localHostIdPromise: Promise<string | null> | null = null;
+  private readonly versions = new Map<string, string | null>();
+  private readonly versionRequests = new Map<string, Promise<string | null>>();
+  private revision = 0;
+  private versionClient: import("@get-bb/plugin-sdk").ExperimentalHostClient<typeof hostContract, typeof hostSignals> | null = null;
+
+  private remoteVersions() {
+    if (this.versionClient) return this.versionClient;
+    const client = this.bb.hosts.experimental_client({ contract: hostContract, experimental_signals: hostSignals });
+    const invalidate = () => { this.revision++; this.versions.clear(); };
+    const subscriptions = [
+      client.experimental_onSignal("changed", ({ hostId, payload }) => {
+        this.revision++;
+        this.versions.delete(JSON.stringify([hostId, payload.path]));
+      }),
+      client.experimental_onWorkerExit(invalidate),
+      this.bb.sdk.subscribe({ event: "host:changed", callback: invalidate }),
+      this.bb.sdk.subscribe({ event: "realtime:connection", callback: invalidate }),
+    ];
+    this.bb.onDispose(() => { subscriptions.forEach((stop) => stop()); invalidate(); });
+    this.versionClient = client;
+    return client;
+  }
+
 
   constructor(
     private readonly bb: BbPluginApi,
@@ -112,9 +135,27 @@ export class DocFiles {
   /** Metadata only, on the machine that owns the file. */
   async version(doc: DocRow): Promise<string | null> {
     if (doc.hostId === null) return fileVersion(doc.absPath);
-    return this.bb.hosts.experimental_client({ contract: hostContract }).call(
-      "fileVersion", { path: doc.absPath }, { hostId: doc.hostId },
-    );
+    const host = await this.bb.sdk.hosts.get({ hostId: doc.hostId });
+    if (host.status !== "connected") {
+      this.versions.clear();
+      throw new Error("The file's host is not connected.");
+    }
+    const client = this.remoteVersions();
+    const key = JSON.stringify([doc.hostId, doc.absPath]);
+    if (this.versions.has(key)) return this.versions.get(key)!;
+    let pending = this.versionRequests.get(key);
+    if (!pending) {
+      const revision = this.revision;
+      pending = client.call("fileVersion", { path: doc.absPath }, { hostId: doc.hostId }).then((version) => {
+        if (this.revision === revision) {
+          if (this.versions.size >= 64) this.versions.delete(this.versions.keys().next().value!);
+          this.versions.set(key, version);
+        }
+        return version;
+      }).finally(() => { this.versionRequests.delete(key); });
+      this.versionRequests.set(key, pending);
+    }
+    return pending;
   }
 
   /** The file's bytes, from this machine or the host it lives on. */

@@ -8,21 +8,55 @@ const doc = {
   absPath: "D:/Documents/Projects/peptides/.tmp/reports/audit.html",
 } as DocRow;
 
-describe("DocFiles.version on another host", () => {
-  it("requests only metadata from the file's host", async () => {
-    const call = vi.fn().mockResolvedValue("m123-c456-s3000000");
-    const read = vi.fn();
-    const bb = { hosts: { experimental_client: () => ({ call }) }, sdk: { files: { read } } } as unknown as BbPluginApi;
-    expect(await new DocFiles(bb, ".tmp").version(doc)).toBe("m123-c456-s3000000");
-    expect(call).toHaveBeenCalledWith("fileVersion", { path: doc.absPath }, { hostId: doc.hostId });
-    expect(read).not.toHaveBeenCalled();
+function fixture(call = vi.fn().mockResolvedValue("version")) {
+  const listeners = new Map<string, (event?: any) => void>();
+  const read = vi.fn();
+  const get = vi.fn(async () => ({ status: "connected" }));
+  const bb = {
+    hosts: { experimental_client: () => ({ call,
+      experimental_onSignal: (_name: string, fn: (event: any) => void) => { listeners.set("changed", fn); return vi.fn(); },
+      experimental_onWorkerExit: (fn: () => void) => { listeners.set("exit", fn); return vi.fn(); },
+    }) },
+    sdk: { files: { read }, hosts: { get }, subscribe: ({ event, callback }: any) => { listeners.set(event, callback); return vi.fn(); } },
+    onDispose: vi.fn(),
+  } as unknown as BbPluginApi;
+  return { files: new DocFiles(bb, ".tmp"), call, read, get, listeners };
+}
+
+describe("watched remote versions", () => {
+  it("reuses subscribed metadata and invalidates when the file changes", async () => {
+    const f = fixture();
+    expect(await f.files.version(doc)).toBe("version");
+    expect(await f.files.version(doc)).toBe("version");
+    expect(f.call).toHaveBeenCalledTimes(1);
+    expect(f.read).not.toHaveBeenCalled();
+    f.listeners.get("changed")!({ hostId: doc.hostId, payload: { path: doc.absPath } });
+    f.call.mockResolvedValue("changed");
+    expect(await f.files.version(doc)).toBe("changed");
+    expect(f.call).toHaveBeenCalledTimes(2);
   });
 
-  it("preserves host failures instead of claiming the file is gone", async () => {
-    const error = new Error("Host is disconnected");
-    const call = vi.fn().mockRejectedValue(error);
-    const bb = { hosts: { experimental_client: () => ({ call }) } } as unknown as BbPluginApi;
-    await expect(new DocFiles(bb, ".tmp").version(doc)).rejects.toBe(error);
+  it("clears subscribed versions after reconnect, worker exit and offline state", async () => {
+    const f = fixture();
+    for (const event of ["host:changed", "realtime:connection", "exit"]) {
+      await f.files.version(doc);
+      f.listeners.get(event)!();
+    }
+    expect(f.call).toHaveBeenCalledTimes(3);
+    f.get.mockResolvedValue({ status: "disconnected" });
+    await expect(f.files.version(doc)).rejects.toThrow("not connected");
+  });
+
+  it("deduplicates concurrent metadata reads and preserves failures", async () => {
+    const f = fixture();
+    await Promise.all([f.files.version(doc), f.files.version(doc)]);
+    expect(f.call).toHaveBeenCalledTimes(1);
+    f.listeners.get("exit")!();
+    const error = new Error("Disconnected");
+    f.call.mockRejectedValue(error);
+    await expect(f.files.version(doc)).rejects.toBe(error);
+    f.call.mockResolvedValue("reconnected");
+    expect(await f.files.version(doc)).toBe("reconnected");
   });
 });
 
