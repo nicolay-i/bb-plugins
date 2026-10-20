@@ -162,7 +162,11 @@ export function buildHandoffInput(input: Parameters<typeof buildHandoffMessage>[
   const name = path.posix.basename(input.absPath.replace(/\\/g, "/"));
   const lines = [`**Комментарии к ${name.replace(/[\\`*_{}\[\]<>]/g, "\\$&")} · ${input.comments.length}**`, ""];
   input.comments.forEach((comment, index) => {
-    if (input.comments.length > 1) lines.push(`**${index + 1}.**`, "");
+    const imageNumber = input.imageNumbers.get(comment.id);
+    if (input.comments.length > 1 || imageNumber !== undefined) {
+      const image = imageNumber === undefined ? "" : ` · ${isDrawing(comment.anchor) ? "рисунок" : "область"}, изображение ${imageNumber} ниже`;
+      lines.push(`**Комментарий ${index + 1}${image}**`, "");
+    }
     lines.push(comment.body.trim(), "");
     const quote = anchorQuote(comment.anchor)?.replace(/\s+/g, " ").trim();
     if (quote) lines.push(`> ${truncate(quote, 180).replace(/[\\`*_{}\[\]<>]/g, "\\$&")}`, "");

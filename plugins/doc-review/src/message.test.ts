@@ -45,9 +45,19 @@ describe("readable chat hand-off", () => {
       ], imageNumbers: new Map(), imagePaths: new Map(),
     });
     expect(visible!.text).toContain("audit\\_\\[draft\\].md");
-    expect(visible!.text).toContain("**1.**\n\nПервый\n\n**Подробности**");
-    expect(visible!.text).toContain("**2.**\n\nВторой\n\n> \\[link\\]");
+    expect(visible!.text).toContain("**Комментарий 1**\n\nПервый\n\n**Подробности**");
+    expect(visible!.text).toContain("**Комментарий 2**\n\nВторой\n\n> \\[link\\]");
     expect(visible!.text).not.toContain("x".repeat(181));
+  });
+
+  it("explicitly maps each drawing attachment to its comment number", () => {
+    const drawing: Anchor = { kind: "html-drawing", viewport: { w: 640, h: 360 }, strokes: [{ tool: "pen", points: [0, 0, 1, 1] }], marks: [] };
+    const [visible] = buildHandoffInput({ kind: "html", absPath: "/index.html",
+      comments: [comment("c_text", { kind: "doc" }, "Текст"), comment("c_draw", drawing, "Первый рисунок"), comment("c_draw2", drawing, "Второй рисунок")],
+      imageNumbers: new Map([["c_draw", 1], ["c_draw2", 2]]), imagePaths: new Map(),
+    });
+    expect(visible!.text).toContain("**Комментарий 2 · рисунок, изображение 1 ниже**\n\nПервый рисунок");
+    expect(visible!.text).toContain("**Комментарий 3 · рисунок, изображение 2 ниже**\n\nВторой рисунок");
   });
 });
 
