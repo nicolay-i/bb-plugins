@@ -164,8 +164,8 @@ describe("HTML comments", () => {
       imageNumbers: new Map(),
       imagePaths: new Map(),
     });
-    expect(message).toContain("[c_text] Text · «20% discount» · `main > p:nth-of-type(2)`");
-    expect(message).toContain("[c_elem] Element <button> · text: «Buy now» · `#buy`");
+    expect(message).toContain("[c_text] Comment #1 · Text · «20% discount» · `main > p:nth-of-type(2)`");
+    expect(message).toContain("[c_elem] Comment #2 · Element <button> · text: «Buy now» · `#buy`");
     expect(message).toContain('HTML: `<button id="buy" class="cta">Buy now</button>`');
     expect(message).toContain("HTML page");
     expect(message).not.toContain("in frame");
@@ -193,7 +193,7 @@ describe("HTML comments", () => {
       imageNumbers: new Map(),
       imagePaths: new Map(),
     });
-    expect(message).toContain("[c_frame] Text · «Pickup» · in frame `#desk` · `h1`");
+    expect(message).toContain("[c_frame] Comment #1 · Text · «Pickup» · in frame `#desk` · `h1`");
     expect(message).toContain("`srcdoc`");
   });
 });

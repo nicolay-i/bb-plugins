@@ -118,7 +118,7 @@ export function buildHandoffMessage(input: {
   ];
   for (const comment of input.comments) {
     const label = anchorLabel(comment.anchor, input.kind);
-    const parts = [`[${comment.id}] ${label}`];
+    const parts = [`[${comment.id}] Comment #${comment.seq} · ${label}`];
     const imageNumber = input.imageNumbers.get(comment.id);
     const imagePath = input.imagePaths.get(comment.id);
     if (imageNumber !== undefined) parts.push(`image ${imageNumber} attached`);
@@ -161,12 +161,10 @@ export function buildHandoffMessage(input: {
 export function buildHandoffInput(input: Parameters<typeof buildHandoffMessage>[0]) {
   const name = path.posix.basename(input.absPath.replace(/\\/g, "/"));
   const lines = [`**Комментарии к ${name.replace(/[\\`*_{}\[\]<>]/g, "\\$&")} · ${input.comments.length}**`, ""];
-  input.comments.forEach((comment, index) => {
+  input.comments.forEach((comment) => {
     const imageNumber = input.imageNumbers.get(comment.id);
-    if (input.comments.length > 1 || imageNumber !== undefined) {
-      const image = imageNumber === undefined ? "" : ` · ${isDrawing(comment.anchor) ? "рисунок" : "область"}, изображение ${imageNumber} ниже`;
-      lines.push(`**Комментарий ${index + 1}${image}**`, "");
-    }
+    const image = imageNumber === undefined ? "" : ` · ${isDrawing(comment.anchor) ? "рисунок" : "область"} ниже`;
+    lines.push(`**Комментарий №${comment.seq}${image}**`, "");
     lines.push(comment.body.trim(), "");
     const quote = anchorQuote(comment.anchor)?.replace(/\s+/g, " ").trim();
     if (quote) lines.push(`> ${truncate(quote, 180).replace(/[\\`*_{}\[\]<>]/g, "\\$&")}`, "");

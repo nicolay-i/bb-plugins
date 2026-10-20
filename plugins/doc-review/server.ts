@@ -116,22 +116,31 @@ export default async function plugin(bb: BbPluginApi) {
     return { ...comment, imageUrl: `/api/v1/plugins/${bb.pluginId}/http${DRAWING_ROUTE}?c=${comment.id}` };
   }
 
-  /** Makes and keeps the picture of a new drawing; a drawing without one still works. */
+  /** Capture a new drawing with its permanent document comment number. */
   async function saveDrawing(doc: DocRow, comment: ReviewComment, capture: Capture): Promise<void> {
     const anchor = comment.anchor;
     let bytes: Buffer | null = null;
+    const label = `Комментарий №${comment.seq} · ${path.posix.basename(doc.absPath.replace(/\\/g, "/"))}`.slice(0, 200);
+    const photograph = (shot: import("./src/snapshot.js").PageShot) => doc.hostId === null ? camera.shoot(shot) : files.drawing(doc, shot);
     if (capture.kind === "png") {
       const data = Buffer.from(capture.data.replace(/^data:image\/png;base64,/, ""), "base64");
-      if (data.subarray(0, 8).equals(PNG_SIGNATURE)) bytes = data;
+      if (!data.subarray(0, 8).equals(PNG_SIGNATURE) || data.length < 24) throw new Error("Expected a PNG drawing capture.");
+      const w = data.readUInt32BE(16), h = data.readUInt32BE(20);
+      if (w < 1 || h < 1 || w > 20000 || h > 20000 || w * h > 16_000_000) throw new Error("The drawing image is too large.");
+      bytes = await photograph({ label, folder: path.posix.dirname(doc.absPath.replace(/\\/g, "/")),
+        html: `<html><body style="margin:0"><img style="display:block" src="data:image/png;base64,${data.toString("base64")}"></body></html>`,
+        viewport: { w, h }, scroll: { x: 0, y: 0 }, strokes: [],
+      });
     } else if (anchor.kind === "html-drawing" && doc.kind === "html") {
       const shot = {
+        label,
         html: capture.html,
         folder: path.posix.dirname(doc.absPath.replace(/\\/g, "/")),
         viewport: anchor.viewport,
         scroll: capture.scroll,
         strokes: anchor.strokes,
       };
-      bytes = doc.hostId === null ? await camera.shoot(shot) : await files.drawing(doc, shot);
+      bytes = await photograph(shot);
     }
     if (!bytes) throw new Error("Could not capture the drawing; Chrome must be available on the document's host.");
     await mkdir(drawingsDir, { recursive: true });
@@ -586,7 +595,7 @@ export default async function plugin(bb: BbPluginApi) {
           const uploaded = await bb.sdk.projects.attachments.upload({
             projectId,
             clientFile: new Uint8Array(bytes),
-            filename: `${comment.id}.png`,
+            filename: `comment-${comment.seq}-${comment.id}.png`,
             mimeType: "image/png",
           });
           imageInputs.push({ type: "localImage", path: uploaded.path });

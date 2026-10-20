@@ -162,7 +162,8 @@ export class DocFiles {
   /** Capture the drawing where the document's local assets and browser live. */
   async drawing(doc: DocRow, shot: PageShot): Promise<Buffer> {
     if (!doc.hostId || !shot.folder) throw new Error("Expected a remote drawing's host and folder.");
-    const data = await this.remoteVersions().call("drawing", { ...shot, folder: shot.folder }, { hostId: doc.hostId });
+    if (!shot.label) throw new Error("Expected a drawing's comment label.");
+    const data = await this.remoteVersions().call("drawing", { ...shot, label: shot.label, folder: shot.folder }, { hostId: doc.hostId });
     return Buffer.from(data, "base64");
   }
 

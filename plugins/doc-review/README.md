@@ -240,6 +240,9 @@ The chat message shows the document name, comment count, requests and short
 quotes. File paths, selectors, comment IDs and handling instructions are sent
 in a separate `agent-only` text input. Copying the hand-off prompt still includes
 the complete instructions.
+Comment numbers always match their permanent document numbers, even when only
+a subset is sent. New drawing images have a header with that number and the
+document name, and uploaded filenames also carry the number.
 
 HTML drawing snapshots are captured by Chrome on the document's host, where
 its local images and styles are available. The marked snapshot is attached as
