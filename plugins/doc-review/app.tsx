@@ -16,8 +16,10 @@ import { HTML_EXTENSIONS, MARKDOWN_EXTENSIONS } from "./src/types";
 import { ReviewOpener } from "./ui/review-opener";
 import { PANEL_PATH, ReviewsPage } from "./ui/reviews-page";
 import { quoteSelectedComment } from "./ui/quote-comment";
+import { mountDrawingCaptions } from "./ui/drawing-captions";
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({ id: "drawing-captions", mount: mountDrawingCaptions });
   app.slots.messageAction({ id: "quote-comment", title: "Цитировать выделенное", icon: "Quote", run: quoteSelectedComment });
   app.slots.fileOpener({
     id: "review",

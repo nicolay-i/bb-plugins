@@ -243,6 +243,10 @@ the complete instructions.
 Comment numbers always match their permanent document numbers, even when only
 a subset is sent. New drawing images have a header with that number and the
 document name, and uploaded filenames also carry the number.
+The frontend adds readable comment numbers under Doc Review attachment thumbnails
+in chat. This uses a disposable plugin content script; BB's image viewer and click
+handlers stay unchanged. In the Doc Review panel, drawing previews open in a
+dialog with the full image, a comment title and keyboard dismissal.
 
 HTML drawing snapshots are captured by Chrome on the document's host, where
 its local images and styles are available. The marked snapshot is attached as
