@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildHandoffMessage } from "./message";
+import { buildHandoffInput, buildHandoffMessage } from "./message";
 import type { Anchor, ReviewComment } from "./types";
 
 function comment(id: string, anchor: Anchor, body: string): ReviewComment {
@@ -18,6 +18,38 @@ function comment(id: string, anchor: Anchor, body: string): ReviewComment {
     resolvedAt: null,
   };
 }
+
+describe("readable chat hand-off", () => {
+  it("shows the request and quote, keeping the complete instructions agent-only", () => {
+    const input = {
+      kind: "html" as const, absPath: "D:\\private\\reports\\audit.html",
+      comments: [comment("c_html", { kind: "html-text", quote: "Selected\ntext", prefix: "", suffix: "", selector: "#evidence > p" }, "Вынести в постоянные docs?")],
+      imageNumbers: new Map<string, number>(), imagePaths: new Map<string, string>(),
+    };
+    const [visible, context] = buildHandoffInput(input);
+    expect(visible!.text).toBe("**Комментарии к audit.html · 1**\n\nВынести в постоянные docs?\n\n> Selected text");
+    expect(visible).not.toHaveProperty("visibility");
+    expect(context!.visibility).toBe("agent-only");
+    expect(context!.text).toBe(buildHandoffMessage(input));
+    expect(context!.text).toContain("#evidence > p");
+    expect(context!.text).toContain("c_html");
+    expect(context!.text).toContain("bb doc-review resolve");
+  });
+
+  it("numbers multiple comments, preserves their bodies and bounds literal quotes", () => {
+    const [visible] = buildHandoffInput({
+      kind: "md", absPath: "/reports/audit_[draft].md",
+      comments: [
+        comment("c_doc", { kind: "doc" }, "Первый\n\n**Подробности**"),
+        comment("c_text", { kind: "md-text", quote: "[link](https://example.com) " + "x".repeat(400), prefix: "", suffix: "", startLine: 1, endLine: 1 }, "Второй"),
+      ], imageNumbers: new Map(), imagePaths: new Map(),
+    });
+    expect(visible!.text).toContain("audit\\_\\[draft\\].md");
+    expect(visible!.text).toContain("**1.**\n\nПервый\n\n**Подробности**");
+    expect(visible!.text).toContain("**2.**\n\nВторой\n\n> \\[link\\]");
+    expect(visible!.text).not.toContain("x".repeat(181));
+  });
+});
 
 describe("drawings in the hand-off message", () => {
   it("names what each stroke of an HTML drawing touches", () => {

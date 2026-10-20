@@ -21,7 +21,7 @@ import { rpcContract, type Capture, type RecentDocument } from "./src/contract.j
 import { reviewCli } from "./src/cli.js";
 import { DocFiles } from "./src/files.js";
 import { BRIDGE_SCRIPT, HTML_SANDBOX, injectIntoHtml } from "./src/html-bridge.js";
-import { buildHandoffMessage } from "./src/message.js";
+import { buildHandoffInput, buildHandoffMessage } from "./src/message.js";
 import { Renderer, renderWidth, type PageSize } from "./src/render.js";
 import { findChrome, PageCamera } from "./src/snapshot.js";
 import { MIGRATIONS, ReviewStore, type Db, type DocRow } from "./src/store.js";
@@ -596,14 +596,14 @@ export default async function plugin(bb: BbPluginApi) {
       }
       const imagePaths = await saveCrops(unattached);
 
-      const text = buildHandoffMessage({
+      const handoffInput = buildHandoffInput({
         kind: doc.kind,
         absPath: doc.absPath,
         comments,
         imageNumbers,
         imagePaths,
       });
-      const input = [{ type: "text" as const, text, mentions: [] }, ...imageInputs];
+      const input = [...handoffInput, ...imageInputs];
 
       let threadId: string;
       if (target.kind === "thread") {

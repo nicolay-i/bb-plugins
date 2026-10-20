@@ -236,6 +236,11 @@ Comments sent to the current chat use queued delivery: if the agent is busy,
 the message waits until its current work finishes. If the chat is idle, it
 starts immediately. Sending comments to a new chat starts that new chat.
 
+The chat message shows the document name, comment count, requests and short
+quotes. File paths, selectors, comment IDs and handling instructions are sent
+in a separate `agent-only` text input. Copying the hand-off prompt still includes
+the complete instructions.
+
 ### Remote document performance
 
 Version checks use file size and modification/change timestamps on the file's
