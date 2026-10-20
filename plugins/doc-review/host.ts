@@ -2,13 +2,22 @@ import path from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { hostContract, hostSignals } from "./src/host-contract.js";
 import { fileVersion } from "./src/file-version.js";
+import { findChrome, PageCamera } from "./src/snapshot.js";
 
 const watches = new Map<string, { close(): Promise<void> }>();
+let camera: PageCamera | null = null;
 
 export default experimental_defineHostEntry({
   contract: hostContract,
   experimental_signals: hostSignals,
   handlers: {
+    drawing: async (shot, context) => {
+      if (!path.isAbsolute(shot.folder) || shot.folder.includes("\0")) throw new Error("Expected an absolute folder path.");
+      camera ??= new PageCamera(() => findChrome(""), path.join(context.experimental_paths.tempDir, "shots"));
+      const bytes = await camera.shoot(shot);
+      if (!bytes) throw new Error("Chrome is required on the document's host to capture drawings.");
+      return bytes.toString("base64");
+    },
     fileVersion: async ({ path: filePath }, context) => {
       if (!path.isAbsolute(filePath) || filePath.includes("\0")) throw new Error("Expected an absolute file path.");
       if (!watches.has(filePath)) {

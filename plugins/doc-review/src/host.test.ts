@@ -3,6 +3,21 @@ import path from "node:path";
 import { expect, it, vi } from "vitest";
 import host from "../host";
 
+it("captures an HTML drawing as a PNG on the document's host", async () => {
+  const temp = path.resolve("../../../../.tmp/doc-review-dev/drawing-capture-check");
+  await mkdir(temp, { recursive: true });
+  const encoded = await host.handlers.drawing({
+    html: '<!doctype html><html><body style="margin:0;background:white"><h1 style="padding:40px">Doc Review drawing</h1><div style="margin:40px;background:#dbeafe;width:300px;height:100px">Image area</div></body></html>',
+    folder: temp, viewport: { w: 640, h: 360 }, scroll: { x: 0, y: 0 },
+    strokes: [{ tool: "pen", points: [30, 120, 350, 120, 350, 270, 30, 270, 30, 120] }],
+  }, { experimental_paths: { tempDir: temp } } as any);
+  const bytes = Buffer.from(encoded, "base64");
+  expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  expect(bytes.readUInt32BE(16)).toBe(640);
+  expect(bytes.readUInt32BE(20)).toBe(360);
+  await writeFile(path.join(temp, "drawing-check.png"), bytes);
+}, 30000);
+
 it("subscribes once, emits invalidation and releases native watchers", async () => {
   const temp = path.resolve("../../../../.tmp");
   await mkdir(temp, { recursive: true });

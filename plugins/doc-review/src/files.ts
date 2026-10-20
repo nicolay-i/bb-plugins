@@ -10,6 +10,7 @@ import type { openerSourceSchema } from "./contract.js";
 import type { DocRow } from "./store.js";
 import { fileVersion } from "./file-version.js";
 import { hostContract, hostSignals } from "./host-contract.js";
+import type { PageShot } from "./snapshot.js";
 
 export type OpenerSource = z.infer<typeof openerSourceSchema>;
 
@@ -156,6 +157,13 @@ export class DocFiles {
       this.versionRequests.set(key, pending);
     }
     return pending;
+  }
+
+  /** Capture the drawing where the document's local assets and browser live. */
+  async drawing(doc: DocRow, shot: PageShot): Promise<Buffer> {
+    if (!doc.hostId || !shot.folder) throw new Error("Expected a remote drawing's host and folder.");
+    const data = await this.remoteVersions().call("drawing", { ...shot, folder: shot.folder }, { hostId: doc.hostId });
+    return Buffer.from(data, "base64");
   }
 
   /** The file's bytes, from this machine or the host it lives on. */

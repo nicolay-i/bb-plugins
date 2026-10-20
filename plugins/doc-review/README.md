@@ -241,6 +241,16 @@ quotes. File paths, selectors, comment IDs and handling instructions are sent
 in a separate `agent-only` text input. Copying the hand-off prompt still includes
 the complete instructions.
 
+HTML drawing snapshots are captured by Chrome on the document's host, where
+its local images and styles are available. The marked snapshot is attached as
+a visible image in chat. A missing capture, unavailable Chrome or failed image
+upload reports an error instead of silently sending a drawing without its image.
+
+To quote part of a sent comment, select its text and use **Цитировать выделенное**
+in the message's action bar. This inserts a Markdown quote into that thread's
+composer and focuses it without sending. BB's built-in selection menu is still
+limited to assistant messages; this action uses the plugin SDK, with no BB core changes.
+
 ### Remote document performance
 
 Version checks use file size and modification/change timestamps on the file's

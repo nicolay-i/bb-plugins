@@ -20,7 +20,7 @@ const MAX_STROKES = 60;
 /** Coordinates per stroke: 2000 points. */
 const MAX_STROKE_NUMBERS = 4000;
 
-const strokeSchema = (coordinate: z.ZodNumber) =>
+export const strokeSchema = (coordinate: z.ZodNumber) =>
   z
     .object({
       tool: z.enum(["pen", "arrow"]),

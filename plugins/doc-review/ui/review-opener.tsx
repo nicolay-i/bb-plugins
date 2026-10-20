@@ -398,21 +398,16 @@ export function Workspace({
   }, []);
 
   const create = async (anchor: Anchor, body: string, capture?: Capture): Promise<ReviewComment | null> => {
-    const save = (withCapture: boolean) =>
+    const save = () =>
       rpc.call("comments.create", {
         docId: doc.id,
         anchor,
         body,
         docVersion: doc.version,
-        ...(withCapture && capture ? { capture } : {}),
+        ...(capture ? { capture } : {}),
       });
     try {
-      // A page too large to send still gets its drawing saved, without the picture.
-      const comment = await save(true).catch((cause: unknown) => {
-        if (!capture) throw cause;
-        toast.warning("The drawing is saved without a picture of the page.");
-        return save(false);
-      });
+      const comment = await save();
       setComments((current) =>
         current && !current.some((item) => item.id === comment.id) ? [...current, comment] : current,
       );

@@ -124,15 +124,16 @@ export default async function plugin(bb: BbPluginApi) {
       const data = Buffer.from(capture.data.replace(/^data:image\/png;base64,/, ""), "base64");
       if (data.subarray(0, 8).equals(PNG_SIGNATURE)) bytes = data;
     } else if (anchor.kind === "html-drawing" && doc.kind === "html") {
-      bytes = await camera.shoot({
+      const shot = {
         html: capture.html,
-        folder: doc.hostId === null ? path.posix.dirname(doc.absPath) : null,
+        folder: path.posix.dirname(doc.absPath.replace(/\\/g, "/")),
         viewport: anchor.viewport,
         scroll: capture.scroll,
         strokes: anchor.strokes,
-      });
+      };
+      bytes = doc.hostId === null ? await camera.shoot(shot) : await files.drawing(doc, shot);
     }
-    if (!bytes) return;
+    if (!bytes) throw new Error("Could not capture the drawing; Chrome must be available on the document's host.");
     await mkdir(drawingsDir, { recursive: true });
     await writeFile(drawingFile(comment.id), bytes);
   }
@@ -321,7 +322,8 @@ export default async function plugin(bb: BbPluginApi) {
     for (const comment of comments) {
       if (!isDrawing(comment.anchor)) continue;
       const bytes = await readFile(drawingFile(comment.id)).catch(() => null);
-      if (bytes) images.set(comment.id, bytes);
+      if (!bytes) throw new Error("This drawing has no captured image. Recreate the drawing before sending it.");
+      images.set(comment.id, bytes);
     }
     return images;
   }
@@ -517,11 +519,11 @@ export default async function plugin(bb: BbPluginApi) {
 
     async "comments.create"({ docId, anchor, body, docVersion, capture }) {
       const doc = requireDoc(docId);
+      if (isDrawing(anchor) && !capture) throw new Error("The drawing's page capture is missing. Reopen the document and try again.");
       const comment = store.createComment({ docId, anchor, body, docVersion });
       if (capture && isDrawing(anchor)) {
-        await saveDrawing(doc, comment, capture).catch((error: unknown) =>
-          bb.log.warn(`picture for drawing ${comment.id}: ${String(error)}`),
-        );
+        try { await saveDrawing(doc, comment, capture); }
+        catch (error) { store.deleteComment(comment.id); throw error; }
       }
       publish([docId]);
       return present(comment);
@@ -590,6 +592,7 @@ export default async function plugin(bb: BbPluginApi) {
           imageInputs.push({ type: "localImage", path: uploaded.path });
           imageNumbers.set(comment.id, imageInputs.length);
         } catch (error) {
+          if (isDrawing(comment.anchor)) throw new Error(`Could not attach the drawing: ${String(error)}`);
           bb.log.warn(`attachment upload for ${comment.id}: ${String(error)}`);
           unattached.set(comment.id, bytes);
         }
