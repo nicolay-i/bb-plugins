@@ -12,11 +12,11 @@ export function mountDrawingCaptions() {
       if (!caption) {
         caption = document.createElement("span");
         caption.dataset.docReviewCaption = "";
-        caption.style.cssText = "display:block;padding:4px 8px;font:600 12px/1.4 system-ui,sans-serif;text-align:center;color:inherit";
+        caption.style.cssText = "display:block;padding:2px 4px;font:500 11px/1.4 system-ui,sans-serif;text-align:center;color:inherit";
         button.appendChild(caption);
         captions.add(caption);
       }
-      const label = `Комментарий №${match[1]}`;
+      const label = `№${match[1]}`;
       if (caption.textContent !== label) caption.textContent = label;
     });
   };
