@@ -253,10 +253,10 @@ its local images and styles are available. The marked snapshot is attached as
 a visible image in chat. A missing capture, unavailable Chrome or failed image
 upload reports an error instead of silently sending a drawing without its image.
 
-To quote part of a sent comment, select its text and use **Цитировать выделенное**
-in the message's action bar. This inserts a Markdown quote into that thread's
-composer and focuses it without sending. BB's built-in selection menu is still
-limited to assistant messages; this action uses the plugin SDK, with no BB core changes.
+Selecting text in a user message (including sent comments) shows **Цитировать**
+beside the selection. It inserts a Markdown quote into that thread's composer
+without sending. Assistant messages keep BB's own selection menu. The plugin
+adds no per-message action button and does not change BB core.
 
 ### Remote document performance
 

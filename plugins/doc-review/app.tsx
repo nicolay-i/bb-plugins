@@ -15,12 +15,12 @@ import {
 import { HTML_EXTENSIONS, MARKDOWN_EXTENSIONS } from "./src/types";
 import { ReviewOpener } from "./ui/review-opener";
 import { PANEL_PATH, ReviewsPage } from "./ui/reviews-page";
-import { quoteSelectedComment } from "./ui/quote-comment";
+import { SelectionQuote } from "./ui/selection-quote";
 import { mountDrawingCaptions } from "./ui/drawing-captions";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "drawing-captions", mount: mountDrawingCaptions });
-  app.slots.messageAction({ id: "quote-comment", title: "Цитировать выделенное", icon: "Quote", run: quoteSelectedComment });
+  app.slots.experimental_threadHeaderAction({ id: "selection-quote", title: "Цитирование пользовательских сообщений", component: SelectionQuote });
   app.slots.fileOpener({
     id: "review",
     title: "Doc Review (view and comment)",
