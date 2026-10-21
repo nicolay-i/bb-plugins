@@ -42,6 +42,7 @@ import {
 import { CommentEditor } from "./comment-editor";
 import { CommentList, type CommentActions } from "./comment-list";
 import { htmlFileLink } from "./html-links";
+import { readSendChoice, writeSendChoice, type SendChoice } from "./send-choice";
 import { HtmlDoc } from "./html-doc";
 import { MarkdownDoc, type MarkdownDocument, type Point } from "./markdown-doc";
 import { documentRoot } from "./md-blocks";
@@ -185,10 +186,17 @@ function SendMenu({
   canSendHere: boolean;
   busy: boolean;
   compact: boolean;
-  onSend: (target: "thread" | "new") => void;
+  onSend: (target: SendChoice) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [choice, setChoice] = useState(() => readSendChoice(window.localStorage));
   const box = useRef<HTMLDivElement>(null);
+  const submit = (next: SendChoice) => {
+    writeSendChoice(window.localStorage, next);
+    setChoice(next);
+    setOpen(false);
+    onSend(next);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -205,7 +213,8 @@ function SendMenu({
   }, [open]);
 
   const disabled = count === 0 || busy;
-  const primary: "thread" | "new" = canSendHere ? "thread" : "new";
+  const primary = canSendHere ? choice : "new";
+  const label = primary === "queue" ? "Queue to chat" : primary === "immediate" ? "Send now" : "Send to new chat";
   return (
     <div ref={box} className="relative flex">
       <Button
@@ -213,11 +222,11 @@ function SendMenu({
         size="sm"
         className="rounded-r-none"
         disabled={disabled}
-        onClick={() => onSend(primary)}
-        aria-label={primary === "thread" ? "Send the drafts to this chat" : "Start a new chat with the drafts"}
+        onClick={() => submit(primary)}
+        aria-label={label}
       >
         {busy ? <Icon name="Loading" className="size-3.5 animate-spin" /> : <Icon name="Sent" className="size-3.5" />}
-        {compact ? "Send" : primary === "thread" ? "Send to chat" : "Send to new chat"}
+        {compact ? primary === "queue" ? "Queue" : "Send" : label}
         {count > 0 ? <span className="tabular-nums opacity-80">{count}</span> : null}
       </Button>
       <Button
@@ -238,21 +247,28 @@ function SendMenu({
             disabled={!canSendHere}
             className="flex w-full flex-col items-start rounded-sm px-2 py-1.5 text-left hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
             onClick={() => {
-              setOpen(false);
-              onSend("thread");
+              submit("queue");
             }}
           >
-            <span>To this chat</span>
+            <span>Queue to this chat</span>
             <span className="text-xs text-muted-foreground">
               {canSendHere ? "Queued until the agent finishes its current work" : "Open the file from a chat to use this"}
             </span>
           </button>
           <button
             type="button"
+            disabled={!canSendHere}
+            className="flex w-full flex-col items-start rounded-sm px-2 py-1.5 text-left hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            onClick={() => submit("immediate")}
+          >
+            <span>Send to this chat now</span>
+            <span className="text-xs text-muted-foreground">Direct the agent's current work immediately</span>
+          </button>
+          <button
+            type="button"
             className="flex w-full flex-col items-start rounded-sm px-2 py-1.5 text-left hover:bg-accent"
             onClick={() => {
-              setOpen(false);
-              onSend("new");
+              submit("new");
             }}
           >
             <span>To a new chat</span>
@@ -448,15 +464,15 @@ export function Workspace({
     },
   };
 
-  const send = async (target: "thread" | "new") => {
+  const send = async (target: SendChoice) => {
     if (drafts.length === 0 || sending) return;
     setSending(true);
     const count = drafts.length;
     const noun = count === 1 ? "comment" : "comments";
     try {
-      if (target === "thread") {
+      if (target !== "new") {
         if (!threadId) throw new Error("Open this file from a chat to send comments there.");
-        await rpc.call("comments.send", { docId: doc.id, target: { kind: "thread", threadId } });
+        await rpc.call("comments.send", { docId: doc.id, target: { kind: "thread", threadId, mode: target === "immediate" ? "steer-if-active" : "queue-if-active" } });
         toast.success(`Sent ${count} ${noun} to this chat`);
       } else {
         try {

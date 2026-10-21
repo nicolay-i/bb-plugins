@@ -40,6 +40,11 @@ it("sends readable text and agent-only context to current and new threads", asyn
       expect(args.input[1].text).toContain("bb doc-review resolve");
     }
     expect(send.mock.calls[0]![0].mode).toBe("queue-if-active");
+    for (const mode of ["steer-if-active", "queue-if-active"] as const) {
+      const comment = await handlers["comments.create"]({ docId: doc.id, anchor: { kind: "doc" }, body: mode, docVersion: "v1" });
+      await handlers["comments.send"]({ docId: doc.id, ids: [comment.id], target: { kind: "thread", threadId: "current-thread", mode } });
+      expect(send.mock.calls.at(-1)![0].mode).toBe(mode);
+    }
     const anchor = { kind: "html-drawing", viewport: { w: 640, h: 360 }, strokes: [{ tool: "pen", points: [0, 0, 100, 100] }], marks: [] };
     const capture = { kind: "html", html: "<html><body>Drawing</body></html>", scroll: { x: 0, y: 0 } };
     await expect(handlers["comments.create"]({ docId: doc.id, anchor, body: "Draw", docVersion: "v1" })).rejects.toThrow("capture is missing");

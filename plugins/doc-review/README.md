@@ -226,15 +226,18 @@ on the machine where it runs.
 ### Local links in HTML reports
 
 In Text mode, relative file links open in BB's preview panel on the report's
-host, including links with `target="_blank"`. Paths are relative to the HTML
+host. Links with `target="_blank"` keep the browser's native new-tab behavior,
+using the document's preview URL to resolve relative paths. Paths are relative to the HTML
 file: `other.html`, `../screens/example.png`, or `../../src/app.ts#L12`.
 Spaces and percent-encoded names are supported; `:12:3` and `#L12C3` select a
 line and column in code. Links to `#section` scroll inside the report.
 External URLs and download links keep their ordinary browser behavior.
 
-Comments sent to the current chat use queued delivery: if the agent is busy,
+Comments sent to the current chat default to queued delivery: if the agent is busy,
 the message waits until its current work finishes. If the chat is idle, it
-starts immediately. Sending comments to a new chat starts that new chat.
+starts immediately. The send dropdown also offers immediate delivery to direct
+the agent's current work, or a new chat. The last used option is remembered in
+this browser and shown on the main send button. Sending comments to a new chat starts that new chat.
 
 The chat message shows the document name, comment count, requests and short
 quotes. File paths, selectors, comment IDs and handling instructions are sent

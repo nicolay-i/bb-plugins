@@ -1039,6 +1039,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
     if (mode === "text") {
       var link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
       var href = link && link.getAttribute("href");
+      if (link && (link.getAttribute("target") || "").toLowerCase() === "_blank") return;
       if (href && !link.hasAttribute("download")) {
         href = href.trim();
         if (href.charAt(0) === "#") {

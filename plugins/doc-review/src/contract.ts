@@ -217,7 +217,7 @@ const recentSchema = z.object({
 });
 
 const sendTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("thread"), threadId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("thread"), threadId: z.string().min(1), mode: z.enum(["queue-if-active", "steer-if-active"]).optional() }).strict(),
   z
     .object({
       kind: z.literal("new-thread"),
