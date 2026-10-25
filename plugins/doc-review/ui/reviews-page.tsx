@@ -46,9 +46,11 @@ function Counts({ counts }: { counts: DocSummary["counts"] }) {
 }
 
 function iconFor(path: string): string {
+  // A live site is listed by its address.
+  if (/^https?:\/\//.test(path)) return "Globe";
   const kind = docKindFor(path);
   if (kind === "html") return "Code";
-  return kind === "md" || kind === null ? "FileText" : familyIcon(kind);
+  return kind === "md" || kind === "web" || kind === null ? "FileText" : familyIcon(kind);
 }
 
 interface BrowseEntry {

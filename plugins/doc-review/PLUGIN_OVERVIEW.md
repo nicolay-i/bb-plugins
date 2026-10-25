@@ -5,6 +5,7 @@
 - Drawing over HTML pages, PDFs, and slides: cross out a button, circle a block, draw an arrow to where it should move, and comment on the drawing. The agent gets a picture of your strokes over the page as you saw it, and on HTML the elements each stroke touches.
 - Drafts that wait until you send them: to the current chat, or to a new chat in the same project and workspace with the same model.
 - A status on every comment that follows the agent's work: waiting, done with a note on what changed, or needs you when the agent answered with a question.
+- Live sites in bb's browser (desktop app): press Review beside the address bar and comment on the running page itself, by text, element, or drawing. Comments stay on their pages across reloads and deploys, and Send hands them to the chat that owns the tab.
 - A thread under every comment: answer the agent's question or correct what it did, and the agent replies in the same place, as many rounds as it takes.
 - A **Doc Review** page in the sidebar with the files you commented on, recent files, and a folder browser.
 

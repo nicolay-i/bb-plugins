@@ -350,7 +350,9 @@ export function CommentList({
       )}
       {comments.length === 0 ? (
         <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-          {kind === "spreadsheet"
+          {kind === "web"
+            ? "Open the site in bb's browser in the desktop app and press Review beside the address bar to comment on its pages."
+            : kind === "spreadsheet"
             ? "Click a cell or drag over a range to comment on it."
             : kind === "html"
               ? "Select text to comment on it. Switch to Element to click a block, button, or picture, or to Draw to mark up the page."

@@ -12,6 +12,13 @@
 // maps their rectangles into its own viewport, so the panel talks to one
 // bridge however deep the frames go.
 //
+// In bb's own browser (a live site in a Browser tab) the bridge runs in an
+// isolated world of the top page instead: the injector sets
+// `window.__docReviewHost` first, and the bridge sends through `host.send`
+// and takes the panel's messages on `host.receive`. It leaves the page's
+// frames alone there and sends no copy of the page: the tab's own screenshot
+// is the drawing's picture.
+//
 // The bridge is plain ES2019 kept as a string, so it runs in any page as is.
 
 import { DRAW_STEP, DRAWING_JS } from "./drawing.js";
@@ -22,13 +29,15 @@ const MARK = "data-doc-review-bridge";
 
 export const BRIDGE_SCRIPT = String.raw`(function () {
   "use strict";
-  if (window.__docReviewBridge || window.parent === window) return;
+  if (window.__docReviewBridge) return;
+  var host = window.__docReviewHost || null;
+  if (!host && window.parent === window) return;
   window.__docReviewBridge = true;
   var ACCENT = "79,107,237";
   var MARK = "data-doc-review-bridge";
   // A comment inside a frame names the frame by its CSS path, outermost first.
   var FRAME_JOIN = " >>> ";
-  var parentWindow = window.parent;
+  var parentWindow = host ? { postMessage: function (message) { host.send(message); } } : window.parent;
   var own = document.currentScript;
   // The bridge's own text, for the pages this page shows in srcdoc frames.
   var SOURCE = own && own.hasAttribute(MARK) ? own.textContent || "" : "";
@@ -925,7 +934,8 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
     var viewport = { w: window.innerWidth, h: window.innerHeight };
     var scroll = { x: window.scrollX, y: window.scrollY };
     var fail = function () { return null; };
-    Promise.all([marksFor(strokes).catch(function () { return []; }), serializePage().catch(fail)]).then(function (done) {
+    var copy = host ? Promise.resolve(null) : serializePage().catch(fail);
+    Promise.all([marksFor(strokes).catch(function () { return []; }), copy]).then(function (done) {
       post({
         type: "drawing",
         anchor: { kind: "html-drawing", strokes: strokes, viewport: viewport, marks: done[0] },
@@ -1130,6 +1140,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       toFrames("clear-selection");
     }
   }
+  if (host) host.receive = function (data) { if (data && data.docReview === 1) fromPanel(data); };
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.docReview !== 1) return;

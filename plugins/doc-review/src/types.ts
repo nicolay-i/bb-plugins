@@ -10,8 +10,10 @@ import { documentFamily, extensionOf } from "../lib/formats.js";
  *   to PDF by LibreOffice, then shown as pages.
  * - `spreadsheet` (Excel, ODS): a grid of cells.
  * - `html`: a web page, rendered live in a sandboxed frame.
+ * - `web`: a live site opened in bb's own browser, one document per origin;
+ *   its `absPath` is the origin and each comment names its page.
  */
-export type DocKind = "md" | "pdf" | "text" | "presentation" | "spreadsheet" | "html";
+export type DocKind = "md" | "pdf" | "text" | "presentation" | "spreadsheet" | "html" | "web";
 
 /** The `sandbox` flags for an HTML page's frame, also sent as a CSP header with the page. */
 export const HTML_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals allow-downloads";
@@ -109,6 +111,8 @@ export type Anchor =
        * first, joined by " >>> ". The selector then describes the page inside.
        */
       frame?: string;
+      /** On a live site: the page the comment was left on. */
+      url?: string;
     }
   | {
       kind: "html-element";
@@ -122,6 +126,8 @@ export type Anchor =
       html: string;
       /** Set when the element is inside a frame, as for `html-text`. */
       frame?: string;
+      /** On a live site: the page the comment was left on. */
+      url?: string;
     }
   | { kind: "page-drawing"; page: number; strokes: Stroke[]; text: string }
   | {
@@ -130,6 +136,8 @@ export type Anchor =
       /** The page's viewport when it was drawn on: the layout the strokes match. */
       viewport: { w: number; h: number };
       marks: DrawMark[];
+      /** On a live site: the page the comment was left on. */
+      url?: string;
     };
 
 /**
@@ -235,6 +243,18 @@ export function pageNoun(kind: DocKind): "Slide" | "Page" {
 
 /** A short human label for where a comment points. */
 export function anchorLabel(anchor: Anchor, kind: DocKind): string {
+  const label = placeLabel(anchor, kind);
+  // On a live site the page tells comments apart as much as the place does.
+  const page = kind === "web" ? anchorPage(anchor) : null;
+  if (!page) return label;
+  try {
+    return `${label}, ${new URL(page).pathname}`;
+  } catch {
+    return label;
+  }
+}
+
+function placeLabel(anchor: Anchor, kind: DocKind): string {
   switch (anchor.kind) {
     case "doc":
       return "Whole document";
@@ -291,6 +311,23 @@ export function isDrawing(anchor: Anchor): anchor is Extract<Anchor, { kind: "pa
 export function draftReply(comment: ReviewComment): CommentReply | null {
   const last = comment.thread[comment.thread.length - 1];
   return last && last.author === "user" && last.sentAt === null ? last : null;
+}
+
+/** The page of a live site a comment was left on, if it has one. */
+export function anchorPage(anchor: Anchor): string | null {
+  return "url" in anchor && typeof anchor.url === "string" ? anchor.url : null;
+}
+
+/** A live site's pages are the same page whatever their query or hash says. */
+export function samePage(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    const path = (url: URL) => url.pathname.replace(/\/+$/, "") || "/";
+    return left.origin === right.origin && path(left) === path(right);
+  } catch {
+    return false;
+  }
 }
 
 export function truncate(text: string, max: number): string {

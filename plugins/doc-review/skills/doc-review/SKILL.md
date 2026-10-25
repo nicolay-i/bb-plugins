@@ -51,6 +51,13 @@ comment, then `>` lines quoting the thread so far, then `User's new reply:`.
      touches (`Stroke 2: an arrow from <button> «Delete» … to <header> …`):
      find them in the source the same way as element comments. Open the
      image before editing.
+   - Live sites: the message names a `Site:` and each comment a `Page:`
+     instead of a file. The user commented on a running site (a stand) in
+     bb's browser. Find the code in this project that renders that page (the
+     route, component, or template) by the quoted text or the element's HTML,
+     edit it, and get the change onto the site the way the project ships it
+     (its deploy script, a service restart, a rebuild). Resolve once the site
+     serves the change; if you cannot deploy, say what is left in a reply.
 3. Close each handled comment with a one-line note in the user's language:
    `bb doc-review resolve <id> --note "what changed"`. Several ids can share
    one note when one edit covers them.

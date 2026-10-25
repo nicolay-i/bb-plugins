@@ -5,6 +5,7 @@
 import path from "node:path";
 import {
   anchorLabel,
+  anchorPage,
   isDrawing,
   truncate,
   type DocKind,
@@ -49,6 +50,8 @@ function kindHint(kind: DocKind): string {
       return "Cells are A1 references on the named sheet. Edit the workbook itself (for .xlsx, openpyxl) and keep its formatting and formulas.";
     case "pdf":
       return "Page numbers are 1-based. If this PDF is generated from a source file (Markdown, HTML, PPTX, …), edit the source and regenerate the PDF; otherwise say what you cannot change.";
+    case "web":
+      return "These comments are on a live site opened in bb's browser, not on a file. Each one names its page. Find the code that renders each place (the route, component, or template) by the quoted text or the element's HTML, edit it, and get the change onto that site the way this project ships it; say so if you cannot. Selectors describe the rendered page and can differ from the source's structure.";
     case "html":
       return "This is an HTML page as the browser rendered it. Edit the file itself, or the template or script that generates it and regenerate it; find each place by the quoted text or the element's HTML. Selectors describe the rendered page and can differ from the source's structure.";
   }
@@ -132,11 +135,12 @@ export function buildHandoffMessage(input: {
   /** Comment id → local image path, used when images cannot be attached. */
   imagePaths: Map<string, string>;
 }): string {
-  const name = path.posix.basename(input.absPath);
+  const web = input.kind === "web";
+  const name = web ? input.absPath.replace(/^https?:\/\//, "") : path.posix.basename(input.absPath);
   const count = input.comments.length;
   const lines: string[] = [
     `Review comments on \`${name}\` — ${count} to address.`,
-    `File: \`${input.absPath}\``,
+    web ? `Site: ${input.absPath}` : `File: \`${input.absPath}\``,
     "",
   ];
   for (const comment of input.comments) {
@@ -152,6 +156,8 @@ export function buildHandoffMessage(input: {
     if (html.frame) parts.push(`in frame \`${html.frame}\``);
     if (html.selector) parts.push(`\`${html.selector}\``);
     lines.push(parts.join(" · "));
+    const page = anchorPage(comment.anchor);
+    if (page) lines.push(`Page: ${page}`);
     if (html.snippet) lines.push(`HTML: \`${html.snippet.replace(/`/g, "'")}\``);
     lines.push(...strokeLines(comment));
     lines.push(comment.body.trim());

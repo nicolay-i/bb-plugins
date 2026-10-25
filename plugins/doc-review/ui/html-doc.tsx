@@ -22,7 +22,7 @@ interface FrameRect {
   h: number;
 }
 
-type HtmlAnchor = Extract<Anchor, { kind: "html-text" | "html-element" | "html-drawing" }>;
+export type HtmlAnchor = Extract<Anchor, { kind: "html-text" | "html-element" | "html-drawing" }>;
 
 function isHtmlAnchor(anchor: Anchor | null | undefined): anchor is HtmlAnchor {
   return anchor?.kind === "html-text" || anchor?.kind === "html-element" || anchor?.kind === "html-drawing";
@@ -64,7 +64,7 @@ function text(value: unknown, max: number): string | null {
 }
 
 /** Messages come from a page we do not control: keep only well-formed anchors. */
-function readAnchor(value: unknown): HtmlAnchor | null {
+export function readAnchor(value: unknown): HtmlAnchor | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
   // Set when the place is inside a frame the page shows.

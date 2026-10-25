@@ -1,7 +1,8 @@
 # Doc Review
 
 Read and comment on documents inside bb: Markdown, PDF, Word, PowerPoint,
-Excel, and HTML open in a panel tab beside the chat. Comment the way you would in Figma,
+Excel, and HTML open in a panel tab beside the chat, and a live site opened in
+bb's browser takes comments right on its pages. Comment the way you would in Figma,
 then hand every comment to an agent in one message — in the current chat or a
 new one. The agent closes each comment with a note, so the tab shows what was
 fixed and what still needs you, and you answer it right in the comment's
@@ -90,6 +91,30 @@ exchange runs as long as it needs to, in this chat or a new one.
 
 The **Doc Review** page in the sidebar lists files with comments and their
 status, recent files, and a folder browser, and opens any file by path.
+
+## Live sites
+
+In the desktop app, a site opened in bb's browser (a stand, a staging server,
+a running app) is reviewed on the page itself. Press **Review** beside the
+address bar: a bar at the bottom of the page switches between **Text**
+(select and comment; the page stays clickable), **Element** (click a block,
+button, or picture), and **Draw** (pen and arrow, as on HTML files).
+Numbered pins mark the comments, **Comments** opens the list for this page
+with each thread and **Reply**, and **Send** hands every draft on the site to
+the chat that owns the tab. A drawing goes with a screenshot of the tab, the
+strokes on it.
+
+A site is one document: its comments live on, page by page, across reloads
+and the agent's deploys, and each page shows the ones left on it. The Doc
+Review page lists the site beside files, with every comment and thread. The
+agent gets the site, each comment's page, and the quote or the element's
+HTML, and is asked to change the code behind the page and ship it the way
+the project does.
+
+Only bb Desktop lets a plugin into its browser's pages: the web app and
+phones show no Review button. A link to another page of the site keeps the
+review on; after a full reload the controls come back within a few seconds.
+The controls switch off when the tab is hidden behind another panel tab.
 
 ## Install
 
@@ -187,6 +212,19 @@ bb doc-review reply <id> --note "question or reason"
   pipe with scripts disabled, lets files load only from the page's own
   folder, lays the strokes on top, and takes the screenshot. Pictures live
   next to the plugin's database and go to the agent as attachments.
+- Live sites: the Review button (`ui/web-review.tsx`, a Browser toolbar
+  action) installs the controls (`src/web-ui.ts`) and the bridge into the
+  page's isolated world with `experimental_page.evaluate`. A Browser tab is
+  a native view above the bb window, so the controls are drawn in the page,
+  in a shadow root, rather than by the panel. The bridge talks to them
+  through `window.__docReviewHost` instead of `postMessage`, leaves the
+  page's frames alone, and sends no copy of the page; the controls ask the
+  button for everything else over `bb.postMessage`, and the button answers
+  through `__docReviewWeb.fromPlugin`. A drawing's picture is the tab's own
+  screenshot (`web.capture`: the desktop browser instances on connected
+  machines are asked for the tab), converted to PNG. A site is a `web`
+  document keyed by its origin; each anchor carries the page URL, and pages
+  match by path, without the query or hash.
 - `src/store.ts` keeps documents, comments, and their threads (`replies`:
   the agent's notes and the user's answers, a draft answer last) in the
   plugin's SQLite database; every change publishes a realtime signal that
@@ -218,6 +256,10 @@ bb doc-review reply <id> --note "question or reason"
   frame that loads another file or a site shows as is, without comments.
 - bb's preview of the folder lasts an hour; an HTML page left open longer may
   fail to load pictures it had not loaded yet until it is reopened.
+- Live sites need bb Desktop, and the browser APIs they use are experimental
+  in bb's plugin SDK. Frames inside a live page take no comments, and a
+  comment cannot be edited there (delete it and write it again, or edit it
+  on the Doc Review page).
 
 ## Development
 

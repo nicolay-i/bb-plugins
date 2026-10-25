@@ -97,7 +97,8 @@ type Content =
   | { kind: "pages"; version: string; pages: PageInfo[] }
   | { kind: "needs-libreoffice"; missing: NeedsLibreOfficeResult }
   | { kind: "sheet"; version: string; workbook: WorkbookSummary; sheet: SheetData }
-  | { kind: "html"; version: string; url: string };
+  | { kind: "html"; version: string; url: string }
+  | { kind: "web"; version: string };
 
 /** Loads the document body for the current version; keeps the last one while reloading. */
 function useDocContent(doc: ReviewDoc) {
@@ -116,6 +117,8 @@ function useDocContent(doc: ReviewDoc) {
       if (doc.kind === "html") {
         return { kind: "html", ...(await rpc.call("doc.html", { docId: doc.id })) };
       }
+      // A live site is reviewed in bb's browser; here are only its comments.
+      if (doc.kind === "web") return { kind: "web", version: doc.version };
       if (doc.kind === "spreadsheet") {
         const opened = await rpc.call("sheet.open", { docId: doc.id, locale: navigator.language || "en-US" });
         return { kind: "sheet", version: opened.version, workbook: opened.workbook, sheet: opened.sheet };
@@ -155,6 +158,8 @@ function useDocLinks(doc: ReviewDoc) {
   const rpc = useReviewRpc();
   const [links, setLinks] = useState<{ document: ViewerLink | null; download: ViewerLink } | null>(null);
   useEffect(() => {
+    // A live site has no file to download.
+    if (doc.kind === "web") return;
     let alive = true;
     const load = () =>
       rpc.call("doc.links", { docId: doc.id }).then(
@@ -167,7 +172,7 @@ function useDocLinks(doc: ReviewDoc) {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [rpc, doc.id, doc.version]);
+  }, [rpc, doc.id, doc.kind, doc.version]);
   return links;
 }
 
@@ -595,6 +600,17 @@ export function Workspace({
       onRequestComment={requestComment}
       onSelectComment={selectFromDoc}
     />
+  ) : content.kind === "web" ? (
+    <Centered>
+      <Icon name="Globe" className="size-6" />
+      <p className="max-w-sm">
+        Comments on {doc.name}, a live site. To see them on its pages, open it in bb&apos;s browser in the desktop
+        app and press <span className="font-medium text-foreground">Review</span> beside the address bar.
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={() => navigate.openUrl(doc.absPath)}>
+        Open {doc.name}
+      </Button>
+    </Centered>
   ) : content.kind === "html" ? (
     <HtmlDoc
       url={content.url}

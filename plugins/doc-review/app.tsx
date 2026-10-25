@@ -2,8 +2,10 @@
 //
 // One file opener for Markdown, PDF, Word, PowerPoint, Excel, and HTML: files open
 // in a panel tab beside the chat, where they can be read and commented on
-// (see ui/review-opener.tsx). The sidebar page lists files with comments,
-// recent files, and a folder browser.
+// (see ui/review-opener.tsx). In the desktop app, a Review button beside the
+// address bar of bb's browser does the same on a live site (ui/web-review.tsx).
+// The sidebar page lists files and sites with comments, recent files, and a
+// folder browser.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import {
@@ -15,6 +17,7 @@ import {
 import { HTML_EXTENSIONS, MARKDOWN_EXTENSIONS } from "./src/types";
 import { ReviewOpener } from "./ui/review-opener";
 import { PANEL_PATH, ReviewsPage } from "./ui/reviews-page";
+import { WebReviewAction } from "./ui/web-review";
 
 export default definePluginApp((app) => {
   app.slots.fileOpener({
@@ -29,6 +32,12 @@ export default definePluginApp((app) => {
       ...HTML_EXTENSIONS,
     ],
     component: ReviewOpener,
+  });
+
+  app.slots.experimental_browserToolbarAction({
+    id: "review",
+    title: "Doc Review",
+    component: WebReviewAction,
   });
 
   app.slots.navPanel({

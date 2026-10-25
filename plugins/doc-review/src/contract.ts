@@ -14,6 +14,13 @@ const rectSchema = z
   .strict();
 
 const MAX_QUOTE = 4000;
+const MAX_URL = 2000;
+/** The page of a live site a comment was left on. */
+const pageUrlSchema = z
+  .string()
+  .max(MAX_URL)
+  .refine((value) => /^https?:\/\//i.test(value), "Only http and https pages.")
+  .optional();
 const MAX_SELECTOR = 1000;
 const MAX_HTML = 2000;
 const MAX_STROKES = 60;
@@ -85,6 +92,7 @@ export const anchorSchema = z.discriminatedUnion("kind", [
       suffix: z.string().max(200),
       selector: z.string().max(MAX_SELECTOR),
       frame: z.string().min(1).max(MAX_SELECTOR).optional(),
+      url: pageUrlSchema,
     })
     .strict(),
   z
@@ -95,6 +103,7 @@ export const anchorSchema = z.discriminatedUnion("kind", [
       text: z.string().max(MAX_QUOTE),
       html: z.string().max(MAX_HTML),
       frame: z.string().min(1).max(MAX_SELECTOR).optional(),
+      url: pageUrlSchema,
     })
     .strict(),
   z
@@ -111,6 +120,7 @@ export const anchorSchema = z.discriminatedUnion("kind", [
       strokes: z.array(strokeSchema(z.number().min(-1e6).max(1e7))).min(1).max(MAX_STROKES),
       viewport: z.object({ w: z.number().min(1).max(20000), h: z.number().min(1).max(20000) }).strict(),
       marks: z.array(drawMarkSchema).max(MAX_STROKES * 3),
+      url: pageUrlSchema,
     })
     .strict(),
 ]);
@@ -160,7 +170,7 @@ export const commentSchema = z.object({
   imageUrl: z.string().optional(),
 });
 
-const kindSchema = z.enum(["md", "pdf", "text", "presentation", "spreadsheet", "html"]);
+const kindSchema = z.enum(["md", "pdf", "text", "presentation", "spreadsheet", "html", "web"]);
 
 const docSchema = z.object({
   id: z.string(),
@@ -251,6 +261,19 @@ export const rpcContract = defineRpcContract({
       })
       .strict(),
     output: z.object({ doc: docSchema }),
+  },
+  /** A live site opened in bb's browser: one document per origin. */
+  "web.open": {
+    input: z.object({ url: z.string().min(1).max(MAX_URL) }).strict(),
+    output: z.object({ doc: docSchema }),
+  },
+  /**
+   * A screenshot of a Browser tab in bb Desktop, for a drawing's picture.
+   * JPEG as base64; fails when no connected desktop app has the tab.
+   */
+  "web.capture": {
+    input: z.object({ threadId: z.string().min(1), tabId: z.string().min(1) }).strict(),
+    output: z.object({ mimeType: z.string(), data: z.string() }),
   },
   "doc.get": {
     input: z.object({ docId: z.string() }).strict(),

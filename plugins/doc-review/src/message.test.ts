@@ -102,3 +102,32 @@ describe("follow-ups in the hand-off message", () => {
     expect(text).toContain("is a follow-up");
   });
 });
+
+describe("comments on a live site", () => {
+  it("names the site, each comment's page, and how to ship the change", () => {
+    const onPage = comment(
+      "c_web",
+      {
+        kind: "html-element",
+        selector: "main > button",
+        tag: "button",
+        text: "Start",
+        html: "<button>Start</button>",
+        url: "https://retro.example.com/room/42?tab=board",
+      },
+      "Make it bigger",
+    );
+    const text = buildHandoffMessage({
+      kind: "web",
+      absPath: "https://retro.example.com",
+      comments: [onPage],
+      imageNumbers: new Map(),
+      imagePaths: new Map(),
+    });
+    expect(text).toContain("Review comments on `retro.example.com`");
+    expect(text).toContain("Site: https://retro.example.com\n");
+    expect(text).toContain("[c_web] Element <button>, /room/42 · text: «Start»");
+    expect(text).toContain("Page: https://retro.example.com/room/42?tab=board\n");
+    expect(text).toContain("live site opened in bb's browser");
+  });
+});

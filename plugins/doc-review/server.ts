@@ -67,6 +67,27 @@ class NeedsLibreOfficeError extends Error {
   }
 }
 
+/** Comments on a live site are not tied to a version of anything. */
+const WEB_VERSION = "live";
+
+/** The origin a page belongs to: a site is one document. */
+function siteOf(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Not a web address.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Doc Review comments on http and https pages.");
+  }
+  return parsed.origin;
+}
+
+function docName(doc: DocRow): string {
+  return doc.kind === "web" ? doc.absPath.replace(/^https?:\/\//, "") : path.posix.basename(doc.absPath);
+}
+
 export default async function plugin(bb: BbPluginApi) {
   const database = bb.storage.database();
   bb.storage.migrate(database, MIGRATIONS);
@@ -150,6 +171,8 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function currentVersion(doc: DocRow): Promise<string> {
+    // A live site has no file to version; its pages are whatever the server sends.
+    if (doc.kind === "web") return WEB_VERSION;
     const version = await files.version(doc);
     if (version === null) throw new Error(`The file is gone: ${doc.absPath}`);
     return version;
@@ -159,7 +182,7 @@ export default async function plugin(bb: BbPluginApi) {
     return {
       id: doc.id,
       kind: doc.kind,
-      name: path.posix.basename(doc.absPath),
+      name: docName(doc),
       absPath: doc.absPath,
       hostId: doc.hostId,
       version,
@@ -352,7 +375,7 @@ export default async function plugin(bb: BbPluginApi) {
         docs: store.listDocsWithCounts(100).map((doc) => ({
           id: doc.id,
           kind: doc.kind,
-          name: path.posix.basename(doc.absPath),
+          name: docName(doc),
           absPath: doc.absPath,
           hostId: doc.hostId,
           counts: doc.counts,
@@ -362,7 +385,38 @@ export default async function plugin(bb: BbPluginApi) {
     },
 
     async "doc.version"({ docId }) {
-      return { version: await files.version(requireDoc(docId)) };
+      const doc = requireDoc(docId);
+      return { version: doc.kind === "web" ? WEB_VERSION : await files.version(doc) };
+    },
+
+    async "web.capture"({ threadId, tabId }) {
+      // The toolbar knows its thread and tab; the desktop app holding the
+      // tab is found by asking each connected machine's browser instances.
+      const browsers = bb.sdk.experimental_desktopBrowsers;
+      const hosts = (await bb.sdk.hosts.list()).filter((host) => host.status === "connected");
+      for (const host of hosts) {
+        const listed = await browsers.listInstances({ hostId: host.id }).catch(() => null);
+        for (const instance of listed?.instances ?? []) {
+          try {
+            const shot = await browsers.captureTab({
+              hostId: host.id,
+              instanceId: instance.instanceId,
+              generation: instance.generation,
+              threadId,
+              tabId,
+            });
+            return { mimeType: shot.mimeType, data: shot.base64 };
+          } catch {
+            // Another instance holds the tab.
+          }
+        }
+      }
+      throw new Error("No desktop browser has this tab.");
+    },
+
+    async "web.open"({ url }) {
+      const doc = store.upsertDoc(null, siteOf(url), "web");
+      return { doc: toDto(doc, WEB_VERSION) };
     },
 
     async "doc.markdown"({ docId }) {
