@@ -11,6 +11,10 @@ by the requested change. Area comments on pages come with an attached image of
 that region (or a path to it), and so do drawings. The panel shows every comment's status live, so
 report each one as you finish it.
 
+Every comment keeps a thread: your notes from `resolve` and `reply` go into
+it, and the user can answer back. An answer comes as a follow-up: the
+comment, then `>` lines quoting the thread so far, then `User's new reply:`.
+
 ## Procedure
 
 1. Read the file first. Find each place by its quoted text: line and page
@@ -52,8 +56,12 @@ report each one as you finish it.
    one note when one edit covers them.
 4. When a comment is ambiguous, conflicts with another, or cannot be applied,
    do not guess: `bb doc-review reply <id> --note "question or reason"`. The
-   panel shows the answer under the comment and asks the user to respond.
-5. Finish with a short summary in chat: what changed, and which comments are
+   panel shows the answer in the comment's thread and asks the user to respond.
+5. A follow-up continues the conversation: read the thread, act on the new
+   reply (it can confirm, correct, or reverse what you did), and answer in
+   the same thread with `resolve` or `reply`. Do not redo what the thread
+   says is done.
+6. Finish with a short summary in chat: what changed, and which comments are
    waiting for the user.
 
 ## Commands
@@ -61,9 +69,9 @@ report each one as you finish it.
 | Command | Effect |
 | --- | --- |
 | `bb doc-review list` | Comments sent to this thread that are still waiting. `--all-threads`, `--status all`, `--file <path>` widen it. |
-| `bb doc-review show <id>` | One comment in full, including its exact anchor. |
+| `bb doc-review show <id>` | One comment in full, including its exact anchor and thread. |
 | `bb doc-review resolve <id...> --note "…"` | Mark done with a note on what changed. |
-| `bb doc-review reply <id> --note "…"` | Answer without resolving. |
+| `bb doc-review reply <id> --note "…"` | Answer without resolving; the user can answer back. |
 
 Add `--json` when the output drives code.
 

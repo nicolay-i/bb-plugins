@@ -443,6 +443,20 @@ export function Workspace({
         toast.error(errorText(cause)),
       );
     },
+    async onReply(comment, body) {
+      try {
+        await rpc.call("comments.reply", { id: comment.id, body });
+        refetch();
+      } catch (cause) {
+        toast.error(errorText(cause));
+        throw cause;
+      }
+    },
+    onDiscardReply(comment) {
+      rpc.call("comments.discardReply", { id: comment.id }).then(refetch, (cause: unknown) =>
+        toast.error(errorText(cause)),
+      );
+    },
     async onAddGeneral(body) {
       const comment = await create({ kind: "doc" }, body);
       if (comment) setActiveId(comment.id);

@@ -24,6 +24,7 @@ import { findChrome, PageCamera } from "./src/snapshot.js";
 import { MIGRATIONS, ReviewStore, type Db, type DocRow } from "./src/store.js";
 import {
   docKindFor,
+  draftReply,
   HTML_EXTENSIONS,
   isDrawing,
   isPaged,
@@ -510,6 +511,25 @@ export default async function plugin(bb: BbPluginApi) {
       const existing = store.getComment(id);
       if (!existing) throw new Error("This comment was deleted.");
       const comment = store.updateBody(id, body);
+      publish([existing.doc.id]);
+      return present(comment);
+    },
+
+    async "comments.reply"({ id, body }) {
+      const existing = store.getComment(id);
+      if (!existing) throw new Error("This comment was deleted.");
+      if (existing.status === "draft" && !draftReply(existing)) {
+        throw new Error("This comment is not sent yet; edit it instead.");
+      }
+      const comment = store.saveReply(id, body);
+      publish([existing.doc.id]);
+      return present(comment);
+    },
+
+    async "comments.discardReply"({ id }) {
+      const existing = store.getComment(id);
+      if (!existing) throw new Error("This comment was deleted.");
+      const comment = store.discardReply(id);
       publish([existing.doc.id]);
       return present(comment);
     },

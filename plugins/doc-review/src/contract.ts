@@ -134,6 +134,15 @@ export const captureSchema = z.discriminatedUnion("kind", [
 
 const statusSchema = z.enum(["draft", "sent", "replied", "resolved"]);
 
+const replySchema = z.object({
+  id: z.string(),
+  author: z.enum(["user", "agent"]),
+  body: z.string(),
+  outcome: z.enum(["replied", "resolved"]).nullable(),
+  createdAt: z.number(),
+  sentAt: z.number().nullable(),
+});
+
 export const commentSchema = z.object({
   id: z.string(),
   seq: z.number(),
@@ -147,6 +156,7 @@ export const commentSchema = z.object({
   sentThreadId: z.string().nullable(),
   agentNote: z.string().nullable(),
   resolvedAt: z.number().nullable(),
+  thread: z.array(replySchema),
   imageUrl: z.string().optional(),
 });
 
@@ -402,6 +412,17 @@ export const rpcContract = defineRpcContract({
     input: z
       .object({ id: z.string(), body: z.string().trim().min(1).max(BODY_MAX) })
       .strict(),
+    output: commentSchema,
+  },
+  /** The user's answer in a comment's thread, kept as a draft until sent. */
+  "comments.reply": {
+    input: z
+      .object({ id: z.string(), body: z.string().trim().min(1).max(BODY_MAX) })
+      .strict(),
+    output: commentSchema,
+  },
+  "comments.discardReply": {
+    input: z.object({ id: z.string() }).strict(),
     output: commentSchema,
   },
   "comments.delete": {

@@ -9,11 +9,23 @@ import {
 } from "@get-bb/plugin-sdk";
 import { CLI_NAME, strokeLines } from "./message.js";
 import type { CommentWithDoc, ReviewStore } from "./store.js";
-import { anchorLabel, anchorQuote, truncate, type CommentStatus } from "./types.js";
+import { anchorLabel, anchorQuote, truncate, type CommentReply, type CommentStatus } from "./types.js";
 
 const STATUSES = ["draft", "sent", "replied", "resolved"] as const;
 const LIST_LIMIT = 200;
 const NOTE_MAX = 2000;
+
+function replyLine(reply: CommentReply, max: number): string {
+  const who =
+    reply.author === "agent"
+      ? reply.outcome === "resolved"
+        ? "agent (resolved)"
+        : "agent"
+      : reply.sentAt === null
+        ? "user (draft)"
+        : "user";
+  return `${who}: ${max === Infinity ? reply.body : truncate(reply.body, max)}`;
+}
 
 function formatComment(comment: CommentWithDoc): string {
   const quote = anchorQuote(comment.anchor);
@@ -22,7 +34,7 @@ function formatComment(comment: CommentWithDoc): string {
   ];
   if (quote) lines.push(`  quote: «${truncate(quote, 300)}»`);
   lines.push(`  comment: ${truncate(comment.body, 1000)}`);
-  if (comment.agentNote) lines.push(`  note: ${truncate(comment.agentNote, 500)}`);
+  for (const reply of comment.thread) lines.push(`  ${replyLine(reply, 500)}`);
   return lines.join("\n");
 }
 
@@ -51,6 +63,12 @@ function publicComment(comment: CommentWithDoc) {
     anchor: comment.anchor,
     body: comment.body,
     agentNote: comment.agentNote,
+    thread: comment.thread.map((reply) => ({
+      author: reply.author,
+      body: reply.body,
+      outcome: reply.outcome,
+      draft: reply.author === "user" && reply.sentAt === null,
+    })),
     sentThreadId: comment.sentThreadId,
   };
 }
@@ -96,7 +114,7 @@ export function reviewCli(options: {
     name: CLI_NAME,
     summary: "Read review comments left on files in the Doc Review panel and report fixes",
     description:
-      "Comments are left on Markdown, PDF, Word, PowerPoint, Excel, and HTML files in bb's Doc Review panel and handed to an agent. Close each handled comment with `resolve`, or answer with `reply` when it cannot be applied.",
+      "Comments are left on Markdown, PDF, Word, PowerPoint, Excel, and HTML files in bb's Doc Review panel and handed to an agent. Close each handled comment with `resolve`, or answer with `reply` when it cannot be applied. Notes go into the comment's thread, where the user can answer back; a follow-up arrives with the thread so far.",
     commands: {
       list: cliCommand({
         summary: "List review comments (default: the ones sent to this thread and still waiting)",
@@ -176,7 +194,7 @@ export function reviewCli(options: {
             ...(quote ? [`quote: «${quote}»`] : []),
             ...strokeLines(comment),
             `comment: ${comment.body}`,
-            ...(comment.agentNote ? [`note: ${comment.agentNote}`] : []),
+            ...comment.thread.map((reply) => replyLine(reply, Infinity)),
           ].join("\n");
           return { exitCode: 0, stdout: text };
         },
@@ -211,7 +229,8 @@ export function reviewCli(options: {
         },
       }),
       reply: cliCommand({
-        summary: "Answer a comment without resolving it (a question or why it was not applied)",
+        summary:
+          "Answer a comment without resolving it (a question or why it was not applied); the user can answer back in the comment's thread",
         positionals: [{ name: "id", description: "Comment id", required: true }],
         options: {
           note: {

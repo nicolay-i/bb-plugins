@@ -1,6 +1,7 @@
 // The message an agent receives: one block per comment with its place in the
-// file, the quoted text, and the requested change, followed by how to report
-// back through `bb doc-review`.
+// file, the quoted text, the requested change, and the conversation so far
+// when the user answers in a comment's thread, followed by how to report back
+// through `bb doc-review`.
 import path from "node:path";
 import {
   anchorLabel,
@@ -99,6 +100,29 @@ export function strokeLines(comment: ReviewComment): string[] {
   });
 }
 
+/**
+ * A follow-up's conversation: what was said before, then the user's new
+ * reply. Empty for a comment without a thread.
+ */
+export function threadLines(comment: ReviewComment): string[] {
+  if (comment.thread.length === 0) return [];
+  const lines: string[] = [];
+  const latest = comment.thread.at(-1)!;
+  const fresh = latest.author === "user" && latest.sentAt === null ? latest : null;
+  const earlier = fresh ? comment.thread.slice(0, -1) : comment.thread;
+  for (const reply of earlier) {
+    const who =
+      reply.author === "user"
+        ? "User"
+        : reply.outcome === "resolved"
+          ? "Agent (resolved)"
+          : "Agent";
+    lines.push(`> ${who}: ${reply.body.trim().replace(/\n+/g, " ")}`);
+  }
+  lines.push(fresh ? `User's new reply: ${fresh.body.trim()}` : "Sent again without a new reply.");
+  return lines;
+}
+
 export function buildHandoffMessage(input: {
   kind: DocKind;
   absPath: string;
@@ -131,6 +155,7 @@ export function buildHandoffMessage(input: {
     if (html.snippet) lines.push(`HTML: \`${html.snippet.replace(/`/g, "'")}\``);
     lines.push(...strokeLines(comment));
     lines.push(comment.body.trim());
+    lines.push(...threadLines(comment));
     lines.push("");
   }
   lines.push(kindHint(input.kind));
@@ -145,6 +170,11 @@ export function buildHandoffMessage(input: {
   if (input.comments.some((comment) => isDrawing(comment.anchor))) {
     lines.push(
       "A drawing is red strokes the user drew over the document; its image shows them over the page as the user saw it. A line across something usually means remove it, a loop marks what the comment is about, and an arrow means move what is at its tail to where its head points. The comment text decides.",
+    );
+  }
+  if (input.comments.some((comment) => comment.thread.length > 0)) {
+    lines.push(
+      "A comment with `>` lines is a follow-up: they quote the earlier answers in its thread. Act on the user's new reply in that context and answer in the same thread with `reply` or `resolve`.",
     );
   }
   lines.push(

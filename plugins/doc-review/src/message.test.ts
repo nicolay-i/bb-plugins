@@ -16,6 +16,7 @@ function comment(id: string, anchor: Anchor, body: string): ReviewComment {
     sentThreadId: null,
     agentNote: null,
     resolvedAt: null,
+    thread: [],
   };
 }
 
@@ -68,5 +69,36 @@ describe("drawings in the hand-off message", () => {
       imagePaths: new Map([["c_page", "/data/crops/c_page.png"]]),
     });
     expect(text).toContain("[c_page] Slide 3, drawing · image: `/data/crops/c_page.png` · text under the drawing: «Q3 revenue»");
+  });
+});
+
+describe("follow-ups in the hand-off message", () => {
+  it("quotes the thread before the user's new reply", () => {
+    const followUp: ReviewComment = {
+      ...comment("c_talk", { kind: "doc" }, "Move the mood block to settings"),
+      thread: [
+        { id: "r_1", author: "agent", body: "Into settings?\nOr remove it?", outcome: "replied", createdAt: 1, sentAt: 1 },
+        { id: "r_2", author: "user", body: "Settings", createdAt: 2, sentAt: 2, outcome: null },
+        { id: "r_3", author: "agent", body: "Moved", outcome: "resolved", createdAt: 3, sentAt: 3 },
+        { id: "r_4", author: "user", body: "Keep it on check-in too", createdAt: 4, sentAt: null, outcome: null },
+      ],
+    };
+    const text = buildHandoffMessage({
+      kind: "md",
+      absPath: "/notes/plan.md",
+      comments: [followUp],
+      imageNumbers: new Map(),
+      imagePaths: new Map(),
+    });
+    expect(text).toContain(
+      [
+        "Move the mood block to settings",
+        "> Agent: Into settings? Or remove it?",
+        "> User: Settings",
+        "> Agent (resolved): Moved",
+        "User's new reply: Keep it on check-in too",
+      ].join("\n"),
+    );
+    expect(text).toContain("is a follow-up");
   });
 });

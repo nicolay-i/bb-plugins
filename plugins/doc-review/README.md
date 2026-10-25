@@ -4,7 +4,8 @@ Read and comment on documents inside bb: Markdown, PDF, Word, PowerPoint,
 Excel, and HTML open in a panel tab beside the chat. Comment the way you would in Figma,
 then hand every comment to an agent in one message — in the current chat or a
 new one. The agent closes each comment with a note, so the tab shows what was
-fixed and what still needs you.
+fixed and what still needs you, and you answer it right in the comment's
+thread.
 
 Version 0.2 absorbed the Document Viewer plugin (`pdf-viewer`): its Word,
 PowerPoint, and Excel rendering and its classic PDF view live here now.
@@ -77,6 +78,16 @@ agent runs `bb doc-review resolve` or `bb doc-review reply`; the tab moves each
 comment to *Done* or *Needs you* with the agent's note, live. The reviewed
 file is never modified by the plugin; comments live in its own database.
 
+## Threads
+
+Each comment is a conversation. The agent's notes stay in it, one under
+another, and **Reply** under the latest one answers back: confirm what it
+understood, correct it, or reopen a comment it closed. A reply waits as a
+draft with the comment (edit it with the pencil, drop it with ×) and goes
+out with the other drafts on **Send**. The agent gets the comment, the
+thread so far, and your new reply, and answers in the same thread, so the
+exchange runs as long as it needs to, in this chat or a new one.
+
 The **Doc Review** page in the sidebar lists files with comments and their
 status, recent files, and a folder browser, and opens any file by path.
 
@@ -128,7 +139,7 @@ and report back. The command:
 ```sh
 bb doc-review list                          # comments sent to this thread, still waiting
 bb doc-review list --status all --all-threads
-bb doc-review show <id>
+bb doc-review show <id>                     # with its thread
 bb doc-review resolve <id...> --note "what changed"
 bb doc-review reply <id> --note "question or reason"
 ```
@@ -176,11 +187,14 @@ bb doc-review reply <id> --note "question or reason"
   pipe with scripts disabled, lets files load only from the page's own
   folder, lays the strokes on top, and takes the screenshot. Pictures live
   next to the plugin's database and go to the agent as attachments.
-- `src/store.ts` keeps documents and comments in the plugin's SQLite database;
-  every change publishes a realtime signal that open tabs follow. The tab also
+- `src/store.ts` keeps documents, comments, and their threads (`replies`:
+  the agent's notes and the user's answers, a draft answer last) in the
+  plugin's SQLite database; every change publishes a realtime signal that
+  open tabs follow. The tab also
   polls the file's version, so the agent's edits show up without reopening it.
 - Sending builds one message (file, then per comment: id, location, quote,
-  request) and sends it to the current thread, or spawns a thread in the same
+  request, and for a follow-up the thread and the new reply) and sends it to
+  the current thread, or spawns a thread in the same
   project and environment with the source thread's model.
 
 ## Known limits

@@ -140,7 +140,7 @@ describe("HTML comments", () => {
   });
 
   it("reach the agent with the quote, the selector, and the element's HTML", () => {
-    const base = { docId: "d_1", status: "draft", docVersion: "v", createdAt: 0, updatedAt: 0, note: null, threadId: null, sentAt: null } as const;
+    const base = { docId: "d_1", status: "draft", docVersion: "v", createdAt: 0, updatedAt: 0, note: null, threadId: null, sentAt: null, thread: [] } as const;
     const comments = [
       {
         ...base,
@@ -181,6 +181,7 @@ describe("HTML comments", () => {
       note: null,
       threadId: null,
       sentAt: null,
+      thread: [],
       id: "c_frame",
       seq: 1,
       body: "Shorter title.",

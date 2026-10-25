@@ -5,13 +5,14 @@
 - Drawing over HTML pages, PDFs, and slides: cross out a button, circle a block, draw an arrow to where it should move, and comment on the drawing. The agent gets a picture of your strokes over the page as you saw it, and on HTML the elements each stroke touches.
 - Drafts that wait until you send them: to the current chat, or to a new chat in the same project and workspace with the same model.
 - A status on every comment that follows the agent's work: waiting, done with a note on what changed, or needs you when the agent answered with a question.
+- A thread under every comment: answer the agent's question or correct what it did, and the agent replies in the same place, as many rounds as it takes.
 - A **Doc Review** page in the sidebar with the files you commented on, recent files, and a folder browser.
 
 ## How the hand-off works
 
 One message carries every draft: where it points (lines, page, slide, or cell), the quoted text or cell values, and your request. A comment on an area arrives with an image of that region, so the agent sees the chart you circled.
 
-The bundled skill tells the agent how to change each format: Markdown directly; Word, PowerPoint, and Excel files in place, keeping their layout and formulas; and a PDF through the file it was generated from. The agent closes each comment with `bb doc-review resolve` or answers it with `bb doc-review reply`, and the tab updates while you read.
+The bundled skill tells the agent how to change each format: Markdown directly; Word, PowerPoint, and Excel files in place, keeping their layout and formulas; and a PDF through the file it was generated from. The agent closes each comment with `bb doc-review resolve` or answers it with `bb doc-review reply`, and the tab updates while you read. Your reply in a comment's thread goes out with the next batch, together with the conversation so far, so the agent picks it up in any chat.
 
 ## Viewing
 

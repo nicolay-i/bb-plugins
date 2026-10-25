@@ -7,6 +7,7 @@ export function CommentEditor({
   initial = "",
   label,
   submitLabel = "Comment",
+  placeholder = "What should change here?",
   busy = false,
   className,
   onSubmit,
@@ -16,6 +17,7 @@ export function CommentEditor({
   /** Short context line above the field, e.g. "Lines 12–14". */
   label?: string;
   submitLabel?: string;
+  placeholder?: string;
   busy?: boolean;
   className?: string;
   onSubmit: (body: string) => void;
@@ -79,7 +81,7 @@ export function CommentEditor({
         onChange={(event) => setBody(event.target.value)}
         onKeyDown={onKeyDown}
         rows={2}
-        placeholder="What should change here?"
+        placeholder={placeholder}
         aria-label="Comment"
         className="block w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-base outline-none md:text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
       />

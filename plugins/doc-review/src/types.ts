@@ -140,6 +140,21 @@ export type Anchor =
  */
 export type CommentStatus = "draft" | "sent" | "replied" | "resolved";
 
+/**
+ * One message in a comment's thread after the comment itself: the agent's
+ * answer or note, or the user's reply to it.
+ */
+export interface CommentReply {
+  id: string;
+  author: "user" | "agent";
+  body: string;
+  /** For the agent: whether it answered (`replied`) or closed the comment (`resolved`). */
+  outcome: "replied" | "resolved" | null;
+  createdAt: number;
+  /** When a user reply went to the agent; null while it is a draft. Agent notes carry their time. */
+  sentAt: number | null;
+}
+
 export interface ReviewComment {
   id: string;
   /** Display number within the document: #1, #2, … */
@@ -156,6 +171,8 @@ export interface ReviewComment {
   /** The agent's latest note: what it changed, or its question. */
   agentNote: string | null;
   resolvedAt: number | null;
+  /** Messages after the comment, oldest first; an unsent reply of the user comes last. */
+  thread: CommentReply[];
   /** The picture a drawing went with, served to the panel; absent without one. */
   imageUrl?: string;
 }
@@ -268,6 +285,12 @@ export function squash(text: string): string {
 
 export function isDrawing(anchor: Anchor): anchor is Extract<Anchor, { kind: "page-drawing" | "html-drawing" }> {
   return anchor.kind === "page-drawing" || anchor.kind === "html-drawing";
+}
+
+/** The user's reply waiting to be sent, if any. */
+export function draftReply(comment: ReviewComment): CommentReply | null {
+  const last = comment.thread[comment.thread.length - 1];
+  return last && last.author === "user" && last.sentAt === null ? last : null;
 }
 
 export function truncate(text: string, max: number): string {
