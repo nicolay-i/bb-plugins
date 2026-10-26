@@ -434,6 +434,7 @@ export function HtmlDoc({
       {sketch && !composer && mode === "draw" ? (
         <DrawingBar
           point={sketch.point}
+          strokes={sketch.count}
           onComment={() => post({ type: "sketch-done" })}
           onUndo={() => post({ type: "sketch-undo" })}
           onClear={() => post({ type: "sketch-clear" })}

@@ -100,7 +100,7 @@ export const WEB_UI_SCRIPT = String.raw`(function () {
         if (message.anchor && message.rect) openComposer(message.anchor, message.rect);
         break;
       case "sketch":
-        state.sketch = message.count > 0 && message.rect ? message.rect : null;
+        state.sketch = message.count > 0 && message.rect ? { rect: message.rect, count: message.count } : null;
         render();
         break;
       case "drawing":
@@ -390,15 +390,15 @@ export const WEB_UI_SCRIPT = String.raw`(function () {
         }));
       }
       if (state.sketch && !state.composer && state.mode === "draw") {
-        var s = state.sketch;
+        var s = state.sketch.rect;
+        var drawBar = [button("Comment", function () { toBridge({ type: "sketch-done" }); }, { cls: "primary" })];
+        // With one stroke Undo and Clear would do the same.
+        if (state.sketch.count > 1) drawBar.push(button("Undo", function () { toBridge({ type: "sketch-undo" }); }, { title: "Take back the last stroke (⌘Z)" }));
+        drawBar.push(button(state.sketch.count > 1 ? "Clear all" : "Clear", function () { toBridge({ type: "sketch-clear" }); state.sketch = null; render(); }, { title: "Remove the whole drawing" }));
         next.appendChild(h("div", {
           class: "drawbar panel row",
           style: "top:" + clamp(s.y + s.h + 6, 8, window.innerHeight - 48) + "px;left:" + clamp(s.x, 8, window.innerWidth - 250) + "px"
-        }, [
-          button("Comment", function () { toBridge({ type: "sketch-done" }); }, { cls: "primary" }),
-          button("Undo", function () { toBridge({ type: "sketch-undo" }); }),
-          button("Clear", function () { toBridge({ type: "sketch-clear" }); state.sketch = null; render(); })
-        ]));
+        }, drawBar));
       }
       if (state.composer) next.appendChild(composerPanel());
       if (state.listOpen) next.appendChild(listPanel());

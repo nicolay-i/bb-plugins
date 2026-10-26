@@ -9,6 +9,7 @@
 // in this plugin's SQLite database; the reviewed file is never modified by
 // the plugin. Agents report back with the `bb doc-review` command, and every
 // change reaches open panels through a realtime signal.
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -16,6 +17,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isSupportedPath } from "./lib/formats.js";
 import { rpcContract, type Capture, type RecentDocument } from "./src/contract.js";
 import { reviewCli } from "./src/cli.js";
+import { createAttachments } from "./src/attachments.js";
 import { createExchange } from "./src/exchange.js";
 import { DocFiles } from "./src/files.js";
 import { BRIDGE_SCRIPT, HTML_SANDBOX, injectIntoHtml } from "./src/html-bridge.js";
@@ -51,6 +53,10 @@ const PAGE_ROUTE = "/page";
 const HTML_ROUTE = "/html";
 const DRAWING_ROUTE = "/drawing";
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
+/** Screenshots of live pages wait this long for their drawing comment. */
+const SHOT_KEEP_MS = 10 * 60 * 1000;
+const SHOTS_MAX = 8;
 /** The largest HTML page served into the review frame. */
 const HTML_MAX_BYTES = 20 * 1024 * 1024;
 const NO_PROJECT =
@@ -73,6 +79,13 @@ class NeedsLibreOfficeError extends Error {
 
 /** Comments on a live site are not tied to a version of anything. */
 const WEB_VERSION = "live";
+
+/** Pictures are PNG, except screenshots of live pages, which stay the browser's JPEG. */
+function imageType(bytes: Buffer): { ext: "png" | "jpg"; mime: string } | null {
+  if (bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return { ext: "png", mime: "image/png" };
+  if (bytes.subarray(0, 3).equals(JPEG_SIGNATURE)) return { ext: "jpg", mime: "image/jpeg" };
+  return null;
+}
 
 /** The origin a page belongs to: a site is one document. */
 function siteOf(url: string): string {
@@ -126,11 +139,29 @@ export default async function plugin(bb: BbPluginApi) {
     path.join(dataDir, "shots"),
   );
   const drawingsDir = path.join(dataDir, "drawings");
-  const drawingFile = (id: string) => path.join(drawingsDir, `${id}.png`);
+  const drawingFiles = (id: string) => [path.join(drawingsDir, `${id}.png`), path.join(drawingsDir, `${id}.jpg`)];
+  const drawingFile = (id: string) => drawingFiles(id).find((file) => existsSync(file)) ?? null;
+
+  // Screenshots of live pages, kept here from `web.capture` until the drawing
+  // comment they were taken for is saved: the panel only holds a token.
+  const shots = new Map<string, { bytes: Buffer; at: number }>();
+  function keepShot(bytes: Buffer): string {
+    const now = Date.now();
+    for (const [token, shot] of shots) if (now - shot.at > SHOT_KEEP_MS) shots.delete(token);
+    for (const token of shots.keys()) {
+      if (shots.size < SHOTS_MAX) break;
+      shots.delete(token);
+    }
+    const token = randomUUID();
+    shots.set(token, { bytes, at: now });
+    return token;
+  }
+  /** Which desktop app holds a Browser tab, remembered so the next screenshot skips the search. */
+  const tabPlaces = new Map<string, { hostId: string; instanceId: string; generation: string }>();
 
   /** A comment as the panel gets it: drawings with a picture carry its URL. */
   function present(comment: ReviewComment): ReviewComment {
-    if (!isDrawing(comment.anchor) || !existsSync(drawingFile(comment.id))) return comment;
+    if (!isDrawing(comment.anchor) || !drawingFile(comment.id)) return comment;
     return { ...comment, imageUrl: `/api/v1/plugins/${bb.pluginId}/http${DRAWING_ROUTE}?c=${comment.id}` };
   }
 
@@ -141,6 +172,9 @@ export default async function plugin(bb: BbPluginApi) {
     if (capture.kind === "png") {
       const data = Buffer.from(capture.data.replace(/^data:image\/png;base64,/, ""), "base64");
       if (data.subarray(0, 8).equals(PNG_SIGNATURE)) bytes = data;
+    } else if (capture.kind === "shot") {
+      bytes = shots.get(capture.token)?.bytes ?? null;
+      shots.delete(capture.token);
     } else if (anchor.kind === "html-drawing" && doc.kind === "html") {
       bytes = await camera.shoot({
         html: capture.html,
@@ -150,9 +184,10 @@ export default async function plugin(bb: BbPluginApi) {
         strokes: anchor.strokes,
       });
     }
-    if (!bytes) return;
+    const type = bytes ? imageType(bytes) : null;
+    if (!bytes || !type) return;
     await mkdir(drawingsDir, { recursive: true });
-    await writeFile(drawingFile(comment.id), bytes);
+    await writeFile(path.join(drawingsDir, `${comment.id}.${type.ext}`), bytes);
   }
   const viewer = createViewer(bb, {
     dataDir,
@@ -212,6 +247,7 @@ export default async function plugin(bb: BbPluginApi) {
     currentVersion,
     log: (message) => bb.log.warn(message),
   });
+  const attachments = createAttachments({ bb, files });
 
   async function readSigner(): Promise<string | null> {
     return (await bb.storage.kv.get<string>(SIGNER_KEY)) || null;
@@ -311,10 +347,12 @@ export default async function plugin(bb: BbPluginApi) {
   bb.http.route("GET", DRAWING_ROUTE, async (context) => {
     const id = context.req.query("c") ?? "";
     if (!/^c_[a-z0-9]+$/.test(id)) return context.text("Not found", 404);
-    const bytes = await readFile(drawingFile(id)).catch(() => null);
-    if (!bytes) return context.text("Not found", 404);
+    const file = drawingFile(id);
+    const bytes = file ? await readFile(file).catch(() => null) : null;
+    const type = bytes ? imageType(bytes) : null;
+    if (!bytes || !type) return context.text("Not found", 404);
     return new Response(new Uint8Array(bytes), {
-      headers: { "content-type": "image/png", "cache-control": "private, max-age=86400, immutable" },
+      headers: { "content-type": type.mime, "cache-control": "private, max-age=86400, immutable" },
     });
   });
 
@@ -343,7 +381,8 @@ export default async function plugin(bb: BbPluginApi) {
     }
     for (const comment of comments) {
       if (!isDrawing(comment.anchor)) continue;
-      const bytes = await readFile(drawingFile(comment.id)).catch(() => null);
+      const file = drawingFile(comment.id);
+      const bytes = file ? await readFile(file).catch(() => null) : null;
       if (bytes) images.set(comment.id, bytes);
     }
     return images;
@@ -356,7 +395,7 @@ export default async function plugin(bb: BbPluginApi) {
     await mkdir(dir, { recursive: true });
     const paths = new Map<string, string>();
     for (const [id, bytes] of images) {
-      const file = path.join(dir, `${id}.png`);
+      const file = path.join(dir, `${id}.${imageType(bytes)?.ext ?? "png"}`);
       await writeFile(file, bytes);
       paths.set(id, file);
     }
@@ -413,25 +452,43 @@ export default async function plugin(bb: BbPluginApi) {
       // The toolbar knows its thread and tab; the desktop app holding the
       // tab is found by asking each connected machine's browser instances.
       const browsers = bb.sdk.experimental_desktopBrowsers;
+      const key = `${threadId}\n${tabId}`;
+      const take = async (place: { hostId: string; instanceId: string; generation: string }) => {
+        const shot = await browsers.captureTab({ ...place, threadId, tabId });
+        return { token: keepShot(Buffer.from(shot.base64, "base64")) };
+      };
+      const known = tabPlaces.get(key);
+      if (known) {
+        try {
+          return await take(known);
+        } catch {
+          tabPlaces.delete(key);
+        }
+      }
       const hosts = (await bb.sdk.hosts.list()).filter((host) => host.status === "connected");
       for (const host of hosts) {
         const listed = await browsers.listInstances({ hostId: host.id }).catch(() => null);
         for (const instance of listed?.instances ?? []) {
+          const place = { hostId: host.id, instanceId: instance.instanceId, generation: instance.generation };
           try {
-            const shot = await browsers.captureTab({
-              hostId: host.id,
-              instanceId: instance.instanceId,
-              generation: instance.generation,
-              threadId,
-              tabId,
-            });
-            return { mimeType: shot.mimeType, data: shot.base64 };
+            const result = await take(place);
+            if (tabPlaces.size >= 200) tabPlaces.clear();
+            tabPlaces.set(key, place);
+            return result;
           } catch {
             // Another instance holds the tab.
           }
         }
       }
       throw new Error("No desktop browser has this tab.");
+    },
+
+    async "attachments.list"({ threadId, seq }) {
+      return { files: await attachments.list(threadId, seq) };
+    },
+
+    async "attachments.open"({ threadId, path: stored, name }) {
+      return { path: await attachments.copy(threadId, { path: stored, name }) };
     },
 
     async "web.open"({ url }) {
@@ -614,7 +671,7 @@ export default async function plugin(bb: BbPluginApi) {
     async "comments.delete"({ id }) {
       const existing = store.getComment(id);
       const deleted = store.deleteComment(id);
-      if (deleted) await rm(drawingFile(id), { force: true });
+      if (deleted) await Promise.all(drawingFiles(id).map((file) => rm(file, { force: true })));
       if (existing) publish([existing.doc.id]);
       return { deleted };
     },
@@ -656,12 +713,13 @@ export default async function plugin(bb: BbPluginApi) {
       for (const comment of comments) {
         const bytes = crops.get(comment.id);
         if (!bytes) continue;
+        const type = imageType(bytes) ?? { ext: "png", mime: "image/png" };
         try {
           const uploaded = await bb.sdk.projects.attachments.upload({
             projectId,
             clientFile: new Uint8Array(bytes),
-            filename: `${comment.id}.png`,
-            mimeType: "image/png",
+            filename: `${comment.id}.${type.ext}`,
+            mimeType: type.mime,
           });
           imageInputs.push({ type: "localImage", path: uploaded.path });
           imageNumbers.set(comment.id, imageInputs.length);

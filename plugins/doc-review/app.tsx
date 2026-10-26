@@ -5,7 +5,9 @@
 // (see ui/review-opener.tsx). In the desktop app, a Review button beside the
 // address bar of bb's browser does the same on a live site (ui/web-review.tsx).
 // The sidebar page lists files and sites with comments, recent files, and a
-// folder browser.
+// folder browser. Files attached in the chat open from a message's action bar
+// into a Doc Review tab beside the chat (ui/attachment-tab.tsx): bb shows an
+// attachment's chip in its own preview, which no file opener reaches.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import {
@@ -15,6 +17,7 @@ import {
   TEXT_EXTENSIONS,
 } from "./lib/formats";
 import { HTML_EXTENSIONS, MARKDOWN_EXTENSIONS } from "./src/types";
+import { AttachmentTab } from "./ui/attachment-tab";
 import { ReviewOpener } from "./ui/review-opener";
 import { PANEL_PATH, ReviewsPage } from "./ui/reviews-page";
 import { WebReviewAction } from "./ui/web-review";
@@ -38,6 +41,30 @@ export default definePluginApp((app) => {
     id: "review",
     title: "Doc Review",
     component: WebReviewAction,
+  });
+
+  app.slots.experimental_tab({
+    id: "attachments",
+    title: "Doc Review",
+    tooltip: "Review files attached in this chat",
+    icon: "FileText",
+    layout: "flush",
+    context: { kind: "thread" },
+    availability: "action",
+    component: AttachmentTab,
+  });
+
+  app.slots.messageAction({
+    id: "review-attachments",
+    title: "Review attached files in Doc Review",
+    icon: "FileText",
+    run: (context) => {
+      context.openPanel({
+        actionId: "attachments",
+        title: "Doc Review",
+        params: { seq: context.message.experimental_messageSeq },
+      });
+    },
   });
 
   app.slots.navPanel({

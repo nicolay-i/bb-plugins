@@ -66,18 +66,6 @@ function themeColors(): Record<string, string> {
   return theme;
 }
 
-/** The tab's screenshot comes as JPEG; drawings keep PNG pictures. */
-async function toPng(base64: string, mimeType: string): Promise<string> {
-  const image = new Image();
-  image.src = `data:${mimeType};base64,${base64}`;
-  await image.decode();
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  canvas.getContext("2d")?.drawImage(image, 0, 0);
-  return canvas.toDataURL("image/png");
-}
-
 function siteOf(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -124,7 +112,7 @@ function WebReview({
   /** Counts installs: a fresh install needs the comments again. */
   const [installs, setInstalls] = useState(0);
   const [busy, setBusy] = useState(false);
-  /** The picture for the drawing being commented on, as a PNG data URL. */
+  /** The token of the screenshot the server keeps for the drawing being commented on. */
   const capture = useRef<string | null>(null);
   const latest = useRef({ active, docId, url, threadId, tabId });
   latest.current = { active, docId, url, threadId, tabId };
@@ -229,20 +217,14 @@ function WebReview({
           case "create": {
             const anchor = readAnchor(data.anchor);
             if (!docId || !anchor || !body) throw new Error("This comment could not be saved.");
-            const picture = anchor.kind === "html-drawing" ? capture.current : null;
+            const token = anchor.kind === "html-drawing" ? capture.current : null;
             capture.current = null;
-            const save = (withPicture: boolean) =>
-              rpc.call("comments.create", {
-                docId,
-                anchor: { ...anchor, url },
-                body,
-                docVersion: null,
-                ...(withPicture && picture ? { capture: { kind: "png" as const, data: picture } } : {}),
-              });
-            // A picture too large to send still leaves the drawing saved without it.
-            const comment = await save(true).catch((cause: unknown) => {
-              if (!picture) throw cause;
-              return save(false);
+            const comment = await rpc.call("comments.create", {
+              docId,
+              anchor: { ...anchor, url },
+              body,
+              docVersion: null,
+              ...(token ? { capture: { kind: "shot" as const, token } } : {}),
             });
             refetch();
             await done({ id: comment.id });
@@ -265,8 +247,9 @@ function WebReview({
           case "capture": {
             capture.current = null;
             try {
+              // The picture stays on the server; the page gets its controls back as soon as it is taken.
               const shot = await withTimeout(rpc.call("web.capture", { threadId, tabId }), CAPTURE_MS);
-              capture.current = await toPng(shot.data, shot.mimeType);
+              capture.current = shot.token;
             } catch {
               // The drawing goes without a picture; its elements still describe it.
             }

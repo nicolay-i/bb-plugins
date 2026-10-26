@@ -1457,6 +1457,7 @@ export function PagesDoc({
             return (
               <DrawingBar
                 point={clampToView(toRoot(pageElement, rect.x + rect.w, rect.y + rect.h), 240)}
+                strokes={sketch.strokes.length}
                 onComment={commentOnSketch}
                 onUndo={undoStroke}
                 onClear={() => setSketch(null)}

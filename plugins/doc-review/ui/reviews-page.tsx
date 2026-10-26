@@ -45,7 +45,7 @@ function Counts({ counts }: { counts: DocSummary["counts"] }) {
   return <span>{parts.join(" · ")}</span>;
 }
 
-function iconFor(path: string): string {
+export function iconFor(path: string): string {
   // A live site is listed by its address.
   if (/^https?:\/\//.test(path)) return "Globe";
   const kind = docKindFor(path);

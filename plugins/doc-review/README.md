@@ -23,7 +23,14 @@ PowerPoint, and Excel rendering and its classic PDF view live here now.
 | `.html`, `.htm` | The live page in a sandboxed frame: its styles, pictures, and scripts next to the file load as usual |
 
 Any matching file opened in bb — a link in a message, the file picker,
-`bb thread open` — renders in a panel tab. On pages, **Classic** switches to
+`bb thread open` — renders in a panel tab. A file attached to a chat message
+is the exception: its chip opens bb's own preview, which plugins cannot take
+over. For those, press the Doc Review button in the message's action bar, or
+add a **Doc Review** tab to the chat's side panel: it lists the files attached
+in the chat and opens the one you pick (straight away when there is only
+one). Doc Review works on a copy kept in the chat's storage, in a `Doc
+Review` folder, so the agent you send the comments to changes the file you
+commented on; opening the attachment again opens the same copy. On pages, **Classic** switches to
 the browser's own PDF viewer (search, print); the download button saves the
 original file. Conversions are cached per file version, so a document
 converts once and reopens at once.
@@ -59,7 +66,8 @@ converts once and reopens at once.
   press to where you let go; the arrow shows where something should move; the
   box frames a block. Draw
   as many strokes as you need, then press **Comment** under them (the same
-  bar takes back the last stroke, ⌘Z does too, or clears the drawing). The
+  bar clears the drawing and, from the second stroke on, takes back the last
+  one; ⌘Z does too). The
   agent gets a picture of the drawing over the page as you saw it: on HTML
   that is the page in its current state (what you typed, opened, or
   scrolled), photographed by headless Chrome on the server; on pages, the
@@ -129,7 +137,8 @@ button, or picture), and **Draw** (pen and arrow, as on HTML files).
 Numbered pins mark the comments, **Comments** opens the list for this page
 with each thread and **Reply**, and **Send** hands every draft on the site to
 the chat that owns the tab. A drawing goes with a screenshot of the tab, the
-strokes on it.
+strokes on it; the controls step aside while the screenshot is taken and come
+back as soon as the desktop app has it.
 
 A site is one document: its comments live on, page by page, across reloads
 and the agent's deploys, and each page shows the ones left on it. The Doc
@@ -205,6 +214,14 @@ bb doc-review import "deck (comments).pdf" --into deck.pptx
 
 - `src/files.ts` resolves the opened path (workspace, thread storage, host
   path, or a project checkout) to an absolute path and host.
+- `src/attachments.ts` serves the attachments tab (`ui/attachment-tab.tsx`,
+  opened by the `review-attachments` message action or from the panel's tab
+  list): it reads a thread's attached files from its message requests
+  (`localFile` inputs) or from one message (`threads.message`), and copies
+  the chosen one from the project's attachment store
+  (`projects.attachments.read`) into the thread's storage under `Doc Review/`,
+  never over another file, remembering the copy per attachment. The tab then
+  shows the copy with the same view as any stored file.
 - `src/viewer.ts` (from Document Viewer) converts Word and PowerPoint files
   with LibreOffice into a size- and age-bounded cache, copies files from other
   hosts, mints links for the classic view and downloads (bb's preview
@@ -254,7 +271,10 @@ bb doc-review import "deck (comments).pdf" --into deck.pptx
   button for everything else over `bb.postMessage`, and the button answers
   through `__docReviewWeb.fromPlugin`. A drawing's picture is the tab's own
   screenshot (`web.capture`: the desktop browser instances on connected
-  machines are asked for the tab), converted to PNG. A site is a `web`
+  machines are asked for the tab, and the one that has it is remembered).
+  The server keeps the JPEG and hands the panel a token that
+  `comments.create` redeems, so the picture never travels back to the
+  panel. A site is a `web`
   document keyed by its origin; each anchor carries the page URL, and pages
   match by path, without the query or hash.
 - `src/store.ts` keeps documents, comments, and their threads (`replies`:

@@ -128,11 +128,13 @@ export const anchorSchema = z.discriminatedUnion("kind", [
 
 /**
  * What a drawing looked like, for the image the agent gets: a finished PNG
- * (pages compose it from the page image), or the HTML page as it stood when
- * it was drawn on, which the server photographs with the strokes on top.
+ * (pages compose it from the page image), the HTML page as it stood when it
+ * was drawn on, which the server photographs with the strokes on top, or a
+ * screenshot of a live page that the server took and keeps (`web.capture`).
  */
 export const captureSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("png"), data: z.string().min(1).max(16 * 1024 * 1024) }).strict(),
+  z.object({ kind: z.literal("shot"), token: z.string().uuid() }).strict(),
   z
     .object({
       kind: z.literal("html"),
@@ -269,6 +271,23 @@ export const rpcContract = defineRpcContract({
       .strict(),
     output: z.object({ doc: docSchema }),
   },
+  /**
+   * Files attached to the thread's messages, newest first; with `seq`, the
+   * files on that message.
+   */
+  "attachments.list": {
+    input: z.object({ threadId: z.string().min(1), seq: z.number().int().nullable() }).strict(),
+    output: z.object({
+      files: z.array(z.object({ name: z.string(), path: z.string(), supported: z.boolean() })),
+    }),
+  },
+  /** Copies an attachment into the thread's storage for review; returns its path there. */
+  "attachments.open": {
+    input: z
+      .object({ threadId: z.string().min(1), path: z.string().min(1).max(512), name: z.string().min(1).max(512) })
+      .strict(),
+    output: z.object({ path: z.string() }),
+  },
   /** A live site opened in bb's browser: one document per origin. */
   "web.open": {
     input: z.object({ url: z.string().min(1).max(MAX_URL) }).strict(),
@@ -276,11 +295,13 @@ export const rpcContract = defineRpcContract({
   },
   /**
    * A screenshot of a Browser tab in bb Desktop, for a drawing's picture.
-   * JPEG as base64; fails when no connected desktop app has the tab.
+   * The server keeps it and returns a token for `comments.create`, so the
+   * picture does not travel back to the panel; fails when no connected
+   * desktop app has the tab.
    */
   "web.capture": {
     input: z.object({ threadId: z.string().min(1), tabId: z.string().min(1) }).strict(),
-    output: z.object({ mimeType: z.string(), data: z.string() }),
+    output: z.object({ token: z.string() }),
   },
   "doc.get": {
     input: z.object({ docId: z.string() }).strict(),

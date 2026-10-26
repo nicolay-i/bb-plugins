@@ -1,6 +1,6 @@
 ## What you get
 
-- A tab beside the chat for Markdown, PDF, Word, PowerPoint, Excel, and HTML files. Links in messages, the file picker, and `bb thread open` all land there.
+- A tab beside the chat for Markdown, PDF, Word, PowerPoint, Excel, and HTML files. Links in messages, the file picker, and `bb thread open` all land there, and a file attached to a message opens from the message's action bar.
 - Comments on selected text, on a box drawn around a chart or picture, on spreadsheet cells and ranges, on any element of an HTML page, or on the whole document. Right-click a selection or press Cmd+Option+M (Ctrl+Alt+M) to comment without reaching for the mouse.
 - Drawing over HTML pages, PDFs, and slides with a pen, a straight line, an arrow, or a box: cross out a button, frame a block, draw an arrow to where it should move, and comment on the drawing. The agent gets a picture of your strokes over the page as you saw it, and on HTML the elements each stroke touches.
 - Drafts that wait until you send them: to the current chat, or to a new chat in the same project and workspace with the same model.
