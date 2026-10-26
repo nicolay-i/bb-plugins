@@ -3,6 +3,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { SheetData } from "../lib/sheet-model.js";
+import { DRAW_TOOLS } from "./types.js";
 
 const rectSchema = z
   .object({
@@ -30,7 +31,7 @@ const MAX_STROKE_NUMBERS = 4000;
 const strokeSchema = (coordinate: z.ZodNumber) =>
   z
     .object({
-      tool: z.enum(["pen", "arrow"]),
+      tool: z.enum(DRAW_TOOLS),
       points: z.array(coordinate).min(2).max(MAX_STROKE_NUMBERS),
     })
     .strict()
@@ -147,6 +148,8 @@ const statusSchema = z.enum(["draft", "sent", "replied", "resolved"]);
 const replySchema = z.object({
   id: z.string(),
   author: z.enum(["user", "agent"]),
+  name: z.string().nullable(),
+  originId: z.string().nullable(),
   body: z.string(),
   outcome: z.enum(["replied", "resolved"]).nullable(),
   createdAt: z.number(),
@@ -159,6 +162,9 @@ export const commentSchema = z.object({
   status: statusSchema,
   anchor: anchorSchema,
   body: z.string(),
+  author: z.string().nullable(),
+  originId: z.string().nullable(),
+  originFile: z.string().nullable(),
   docVersion: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -249,6 +255,7 @@ const sendTargetSchema = z.discriminatedUnion("kind", [
 ]);
 
 const BODY_MAX = 8000;
+const signerSchema = z.string().trim().max(120).nullable();
 
 export const rpcContract = defineRpcContract({
   "doc.open": {
@@ -478,6 +485,36 @@ export const rpcContract = defineRpcContract({
       .object({ ids: z.array(z.string()).min(1).max(500), threadId: z.string().nullable() })
       .strict(),
     output: z.object({ sent: z.number() }),
+  },
+  /** The name the user signs exported comments with, as last used. */
+  "export.signer": {
+    input: z.null(),
+    output: z.object({ signer: z.string().nullable() }),
+  },
+  /** A PDF of a paged document with its comments, to download. */
+  "doc.export": {
+    input: z.object({ docId: z.string(), signer: signerSchema }).strict(),
+    output: z.object({ link: linkSchema, name: z.string(), count: z.number() }),
+  },
+  /** Comments a PDF carries from another bb's export, if any. */
+  "doc.shared": {
+    input: z.object({ docId: z.string() }).strict(),
+    output: z.object({
+      shared: z
+        .object({
+          by: z.string().nullable(),
+          file: z.string(),
+          count: z.number(),
+          newHere: z.number(),
+          original: z.object({ path: z.string(), kind: kindSchema, newThere: z.number() }).nullable(),
+        })
+        .nullable(),
+    }),
+  },
+  /** Brings those comments in: into this PDF, or into the file they were written on. */
+  "comments.import": {
+    input: z.object({ docId: z.string(), into: z.enum(["here", "original"]) }).strict(),
+    output: z.object({ docId: z.string(), name: z.string(), added: z.number(), updated: z.number() }),
   },
 });
 

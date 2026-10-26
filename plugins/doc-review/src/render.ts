@@ -187,24 +187,31 @@ export class Renderer {
     });
   }
 
-  /** Renders one page to PNG at a width once per version; returns the image path. */
+  /**
+   * Renders one page to PNG at a width once per version; returns the image
+   * path. `hideAnnotations` leaves out the PDF's own annotations, for a file
+   * whose comments the panel shows itself.
+   */
   async pageImage(
     docId: string,
     version: string,
     pdfPath: string,
     n: number,
     width: number = DEFAULT_PAGE_WIDTH,
+    hideAnnotations = false,
   ): Promise<string> {
     const dir = this.versionDir(docId, version);
-    const target = path.join(dir, `page-${n}-${width}.png`);
+    const look = hideAnnotations ? "-clean" : "";
+    const target = path.join(dir, `page-${n}-${width}${look}.png`);
     if (await exists(target)) return target;
     return this.once(target, () =>
       this.inSlot(async () => {
         await mkdir(dir, { recursive: true });
-        const prefix = path.join(dir, `render-${n}-${width}-${process.pid}`);
+        const prefix = path.join(dir, `render-${n}-${width}${look}-${process.pid}`);
         await run(
           "pdftoppm",
           [
+            ...(hideAnnotations ? ["-hide-annotations"] : []),
             "-png",
             "-f",
             String(n),

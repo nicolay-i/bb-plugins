@@ -33,18 +33,26 @@ export interface Rect {
   h: number;
 }
 
-/**
- * One stroke of a drawing: a freehand line (`pen`), or a straight arrow from
- * its first point to its last. Points are flat `[x0, y0, x1, y1, …]`: on a
- * page, fractions of the page size; on an HTML page, CSS pixels from the top
- * left of the page as it scrolls.
- */
-export interface Stroke {
-  tool: "pen" | "arrow";
-  points: number[];
+/** Drawing tools, in the order the toolbar shows them. */
+export const DRAW_TOOLS = ["pen", "line", "arrow", "rect"] as const;
+
+export type DrawTool = (typeof DRAW_TOOLS)[number];
+
+export function isDrawTool(value: unknown): value is DrawTool {
+  return (DRAW_TOOLS as readonly unknown[]).includes(value);
 }
 
-export type DrawTool = Stroke["tool"];
+/**
+ * One stroke of a drawing: a freehand line (`pen`); or a shape set by two
+ * points, its first and its last: a straight `line`, an `arrow` pointing at
+ * the last point, or a `rect` with those two corners. Points are flat
+ * `[x0, y0, x1, y1, …]`: on a page, fractions of the page size; on an HTML
+ * page, CSS pixels from the top left of the page as it scrolls.
+ */
+export interface Stroke {
+  tool: DrawTool;
+  points: number[];
+}
 
 /**
  * What a stroke on an HTML page touches:
@@ -155,6 +163,13 @@ export type CommentStatus = "draft" | "sent" | "replied" | "resolved";
 export interface CommentReply {
   id: string;
   author: "user" | "agent";
+  /**
+   * Set when the reply came from another reviewer's file: their name, or for
+   * an agent, the reviewer whose agent wrote it. Null for this bb's own.
+   */
+  name: string | null;
+  /** The reply's id in the review it was imported from. */
+  originId: string | null;
   body: string;
   /** For the agent: whether it answered (`replied`) or closed the comment (`resolved`). */
   outcome: "replied" | "resolved" | null;
@@ -170,6 +185,12 @@ export interface ReviewComment {
   status: CommentStatus;
   anchor: Anchor;
   body: string;
+  /** Who wrote it, when it came from another reviewer's file; null for this bb's user. */
+  author: string | null;
+  /** The comment's id in the review it was imported from. */
+  originId: string | null;
+  /** The file it was written on, when that is another file (an imported PDF's source). */
+  originFile: string | null;
   /** Document version the comment was written against. */
   docVersion: string | null;
   createdAt: number;
@@ -311,6 +332,27 @@ export function isDrawing(anchor: Anchor): anchor is Extract<Anchor, { kind: "pa
 export function draftReply(comment: ReviewComment): CommentReply | null {
   const last = comment.thread[comment.thread.length - 1];
   return last && last.author === "user" && last.sentAt === null ? last : null;
+}
+
+export type PageAnchor = Extract<Anchor, { kind: "page-text" | "page-area" | "page-drawing" }>;
+
+export function isPageAnchor(anchor: Anchor): anchor is PageAnchor {
+  return anchor.kind === "page-text" || anchor.kind === "page-area" || anchor.kind === "page-drawing";
+}
+
+/**
+ * Whether other reviewers are in on a comment: they wrote it, or answered it
+ * in a PDF that came back. Such a comment takes replies even as a draft.
+ */
+export function sharedWithOthers(comment: ReviewComment): boolean {
+  return comment.author !== null || comment.thread.some((reply) => reply.name !== null);
+}
+
+/** Who wrote a reply, as the comment list and the agent read it. */
+export function replyAuthor(reply: CommentReply): string {
+  if (reply.author === "agent") return reply.name ? `${reply.name}'s agent` : "Agent";
+  if (reply.name) return reply.name;
+  return reply.sentAt === null ? "You, not sent" : "You";
 }
 
 /** The page of a live site a comment was left on, if it has one. */

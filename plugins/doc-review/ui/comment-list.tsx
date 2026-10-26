@@ -9,6 +9,8 @@ import {
   anchorLabel,
   anchorQuote,
   draftReply,
+  replyAuthor,
+  sharedWithOthers,
   truncate,
   type CommentReply,
   type CommentStatus,
@@ -95,9 +97,7 @@ function ReplyBubble({
     >
       <div className="flex items-start gap-1">
         <p className="min-w-0 flex-1 whitespace-pre-wrap break-words">
-          <span className="font-medium">
-            {reply.author === "agent" ? "Agent" : draft ? "You, not sent" : "You"}:
-          </span>{" "}
+          <span className="font-medium">{replyAuthor(reply)}:</span>{" "}
           {reply.body}
         </p>
         {onDiscard ? (
@@ -131,9 +131,12 @@ function CommentCard({
   const pending = draftReply(comment);
   const sentThread = pending ? comment.thread.slice(0, -1) : comment.thread;
   // The pencil edits the unsent reply, or the comment while nobody answered it.
-  const editable =
-    pending !== null || (comment.thread.length === 0 && comment.status !== "resolved");
-  const canReply = comment.status === "replied" || comment.status === "resolved";
+  // Another reviewer's comment is this user's copy to adjust before passing it on.
+  const others = sharedWithOthers(comment);
+  const editable = pending !== null || ((comment.thread.length === 0 || others) && comment.status !== "resolved");
+  const canReply = comment.status === "replied" || comment.status === "resolved" || (others && pending === null);
+  const lastName = comment.thread.filter((reply) => reply.name !== null).at(-1)?.name ?? comment.author;
+  const replyPlaceholder = others && comment.status === "draft" && lastName ? `Answer ${lastName}` : REPLY_PLACEHOLDER;
   const editor = (options: {
     initial: string;
     submitLabel: string;
@@ -194,6 +197,14 @@ function CommentCard({
         </span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {anchorLabel(comment.anchor, kind)} · {STATUS_LABEL[comment.status]}
+          {comment.author ? (
+            <span
+              className="ml-1.5 font-medium text-foreground"
+              title={comment.originFile ? `Written on ${comment.originFile}` : undefined}
+            >
+              {comment.author}
+            </span>
+          ) : null}
         </span>
         <div className="flex shrink-0 items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
           {editable ? (
@@ -249,7 +260,7 @@ function CommentCard({
           editor({
             initial: pending.body,
             submitLabel: "Save",
-            placeholder: REPLY_PLACEHOLDER,
+            placeholder: replyPlaceholder,
             save: (body) => actions.onReply(comment, body),
             close: () => setEditing(false),
           })
@@ -266,7 +277,7 @@ function CommentCard({
           editor({
             initial: "",
             submitLabel: "Reply",
-            placeholder: REPLY_PLACEHOLDER,
+            placeholder: replyPlaceholder,
             save: (body) => actions.onReply(comment, body),
             close: () => setReplying(false),
           })

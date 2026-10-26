@@ -30,7 +30,9 @@ import type {
 } from "../src/contract";
 import {
   anchorLabel,
+  DRAW_TOOLS,
   isDrawing,
+  isPageAnchor,
   isPaged,
   type Anchor,
   type DrawTool,
@@ -44,6 +46,7 @@ import { HtmlDoc } from "./html-doc";
 import { MarkdownDoc, type MarkdownDocument, type Point } from "./markdown-doc";
 import { documentRoot } from "./md-blocks";
 import { PagesDoc, type PageMode } from "./pages-doc";
+import { DownloadMenu, SharedBanner, useShared } from "./share-ui";
 import { SheetDoc } from "./sheet-doc";
 import { errorText, useComments, useReviewDoc, useReviewRpc } from "./use-review";
 
@@ -55,6 +58,16 @@ const COMPACT_MAX_PX = 560;
 const SHEET_SHARE = 0.55;
 /** Whether the comment list beside the document is tucked away, kept across files. */
 const LIST_HIDDEN_KEY = "doc-review:list-hidden";
+
+/** The Doc Review page's path (reviews-page.tsx), where a document opens on its own. */
+const PAGE_PATH = "doc-review";
+
+const TOOL_BUTTONS: Record<DrawTool, { label: string; title: string; icon: string }> = {
+  pen: { label: "Pen", title: "Pen: cross out, underline, circle", icon: "Edit" },
+  line: { label: "Line", title: "Line: a straight line, to underline or cross out", icon: "Line" },
+  arrow: { label: "Arrow", title: "Arrow: show where to move something", icon: "ArrowUpRight" },
+  rect: { label: "Box", title: "Box: frame a block", icon: "Square" },
+};
 
 function readListHidden(): boolean {
   try {
@@ -350,6 +363,9 @@ export function Workspace({
   const [listHidden, setListHidden] = useState(readListHidden);
 
   const list = comments ?? [];
+  const { shared, reload: reloadShared } = useShared(doc, comments);
+  // What a PDF with comments would carry: comments on pages and on the whole document.
+  const shareable = paged ? list.filter((comment) => comment.anchor.kind === "doc" || isPageAnchor(comment.anchor)).length : null;
   const coveredBottom = !wide && listOpen ? SHEET_SHARE : 0;
   const drafts = list.filter((comment) => comment.status === "draft");
   const needsYou = list.filter((comment) => comment.status === "replied").length;
@@ -714,20 +730,20 @@ export function Workspace({
         ) : null}
         {hasModes && mode === "draw" ? (
           <div className="flex rounded-md border border-border p-0.5" role="group" aria-label="Drawing tool">
-            {(["pen", "arrow"] as const).map((value) => (
+            {DRAW_TOOLS.map((value) => (
               <button
                 key={value}
                 type="button"
                 aria-pressed={tool === value}
-                aria-label={value === "pen" ? "Pen" : "Arrow"}
-                title={value === "pen" ? "Pen: cross out, underline, circle" : "Arrow: show where to move something"}
+                aria-label={TOOL_BUTTONS[value].label}
+                title={TOOL_BUTTONS[value].title}
                 onClick={() => setTool(value)}
                 className={cn(
                   "inline-flex size-7 items-center justify-center rounded-[5px]",
                   tool === value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <Icon name={value === "pen" ? "Edit" : "ArrowUpRight"} className="size-3.5" />
+                <Icon name={TOOL_BUTTONS[value].icon} className="size-3.5" />
               </button>
             ))}
           </div>
@@ -766,13 +782,7 @@ export function Workspace({
             <Icon name="Eye" className="size-4" />
           </Button>
         ) : null}
-        {links ? (
-          <Button asChild type="button" variant="ghost" size="icon" className="size-8 text-muted-foreground">
-            <a href={links.download.url} download={doc.name} aria-label={`Download ${doc.name}`}>
-              <Icon name="Download" className="size-4" />
-            </a>
-          </Button>
-        ) : null}
+        {links ? <DownloadMenu doc={doc} original={links.download} shareable={shareable} /> : null}
         <span className="inline-flex" title={listShown ? "Hide comments" : "Show comments"}>
           <Button
             type="button"
@@ -800,6 +810,17 @@ export function Workspace({
           onSend={(target) => void send(target)}
         />
       </div>
+      {shared ? (
+        <SharedBanner
+          doc={doc}
+          shared={shared}
+          onImported={() => {
+            refetch();
+            reloadShared();
+          }}
+          onOpen={(docId) => navigate.toPluginPanel(PAGE_PATH, { subPath: `doc/${docId}` })}
+        />
+      ) : null}
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1">
           <div

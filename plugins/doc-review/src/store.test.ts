@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import { buildShared } from "./share";
 import { MIGRATIONS, ReviewStore, type Db } from "./store";
 
 function setup(migrations = MIGRATIONS) {
@@ -94,5 +95,73 @@ describe("comment threads", () => {
     expect(store.getComment("c_old")?.thread).toMatchObject([
       { author: "agent", body: "Old question", outcome: "replied" },
     ]);
+  });
+});
+
+describe("comments from another reviewer", () => {
+  const file = { name: "deck.pptx", kind: "presentation" as const, pages: 3 };
+
+  function deck(store: ReviewStore, path: string) {
+    return store.upsertDoc(null, path, "presentation");
+  }
+
+  it("arrive as drafts under their author and come back with the colleague's replies", () => {
+    // Фома comments on the deck and exports it.
+    const mine = setup();
+    const doc = deck(mine.store, "/fom/deck.pptx");
+    const comment = mine.store.createComment({ docId: doc.id, anchor: { kind: "page-area", page: 2, rect: { x: 0, y: 0, w: 0.5, h: 0.5 }, text: "" }, body: "Убрать график", docVersion: null });
+    mine.store.markSent([comment.id], "thr_a");
+    const out = buildShared({ comments: mine.store.listComments(doc.id), file, signer: "Фома" });
+
+    // Коля imports it into his own copy of the deck.
+    const theirs = setup();
+    const copy = deck(theirs.store, "/kol/deck.pptx");
+    expect(theirs.store.importComments({ docId: copy.id, docVersion: "v1", originFile: null, comments: out.comments })).toEqual({ added: 1, updated: 0 });
+    const [imported] = theirs.store.listComments(copy.id);
+    expect(imported).toMatchObject({ status: "draft", author: "Фома", originId: comment.id, body: "Убрать график", docVersion: "v1" });
+
+    // Importing the same file again adds nothing.
+    expect(theirs.store.importComments({ docId: copy.id, docVersion: "v1", originFile: null, comments: out.comments })).toEqual({ added: 0, updated: 0 });
+
+    // He answers and sends the deck back.
+    theirs.store.saveReply(imported!.id, "График нужен для отчёта");
+    theirs.store.markSent([imported!.id], "thr_k");
+    const back = buildShared({ comments: theirs.store.listComments(copy.id), file, signer: "Коля" });
+    expect(back.comments[0]!.id).toBe(comment.id);
+
+    // Фома imports the answer: it joins his comment's thread, which now needs him.
+    expect(mine.store.importComments({ docId: doc.id, docVersion: null, originFile: null, comments: back.comments })).toEqual({ added: 0, updated: 1 });
+    const [updated] = mine.store.listComments(doc.id);
+    expect(updated!.status).toBe("replied");
+    expect(updated!.thread.map((reply) => [reply.author, reply.name, reply.body])).toEqual([["user", "Коля", "График нужен для отчёта"]]);
+
+    // And a second import of the same answer changes nothing.
+    expect(mine.store.importComments({ docId: doc.id, docVersion: null, originFile: null, comments: back.comments })).toEqual({ added: 0, updated: 0 });
+  });
+
+  it("counts a known comment with a new reply as still to import, and finds where it lives", () => {
+    const { store } = setup();
+    const doc = deck(store, "/fom/deck.pptx");
+    const mine = store.createComment({ docId: doc.id, anchor: { kind: "doc" }, body: "Ок?", docVersion: null });
+    const back = [{ id: mine.id, author: "Фома", anchor: { kind: "doc" as const }, body: "Ок?", createdAt: 1, thread: [{ id: "r_k", author: "user" as const, name: "Коля", body: "Да", outcome: null, createdAt: 2 }] }];
+    expect(store.countPending(doc.id, back)).toBe(1);
+    expect(store.docsHolding([mine.id])).toEqual([doc.id]);
+    store.importComments({ docId: doc.id, docVersion: null, originFile: null, comments: back });
+    expect(store.countPending(doc.id, back)).toBe(0);
+  });
+
+  it("names a reviewer who did not sign", () => {
+    const { store } = setup();
+    const doc = deck(store, "/x/deck.pptx");
+    store.importComments({
+      docId: doc.id,
+      docVersion: null,
+      originFile: "deck.pptx",
+      comments: [{ id: "c_far", author: null, anchor: { kind: "doc" }, body: "Ок", createdAt: 1, thread: [{ id: "r_far", author: "user", name: null, body: "Да", outcome: null, createdAt: 2 }] }],
+    });
+    const [comment] = store.listComments(doc.id);
+    expect(comment!.author).toBe("Reviewer");
+    expect(comment!.originFile).toBe("deck.pptx");
+    expect(comment!.thread[0]!.name).toBe("Reviewer");
   });
 });

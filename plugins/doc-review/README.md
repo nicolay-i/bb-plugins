@@ -55,7 +55,9 @@ converts once and reopens at once.
   side by side, say) take comments too, and the agent learns which frame.
 - **Drawing:** on HTML pages and on pages and slides, switch to **Draw** and
   mark up the document the way you would on paper: the pen crosses out,
-  underlines, or circles, the arrow shows where something should move. Draw
+  underlines, or circles; the line draws a straight stroke from where you
+  press to where you let go; the arrow shows where something should move; the
+  box frames a block. Draw
   as many strokes as you need, then press **Comment** under them (the same
   bar takes back the last stroke, ⌘Z does too, or clears the drawing). The
   agent gets a picture of the drawing over the page as you saw it: on HTML
@@ -91,6 +93,31 @@ exchange runs as long as it needs to, in this chat or a new one.
 
 The **Doc Review** page in the sidebar lists files with comments and their
 status, recent files, and a folder browser, and opens any file by path.
+
+## Sharing comments as a PDF
+
+The download button on a PDF, Word file, or presentation offers the
+**Original file** or a **PDF with comments**: type the name to sign them
+with and press **Download PDF**. In it:
+
+- every comment is a PDF annotation (a highlight on quoted text, a box on
+  an area, the strokes of a drawing, a note for the whole document) with the
+  comment as its text and your name as its author, so PDF viewers list them
+  as comments;
+- each mark carries a numbered badge, and closing pages list every comment
+  with its replies by number, for viewers that hide annotation text;
+- the comments ride along as an attachment that Doc Review reads.
+
+When someone with Doc Review opens that PDF in bb, a bar over it offers to
+**Import** the comments: into the PDF, or into the file they were written on
+(the deck or document) when it sits next to the PDF. Imported comments are
+drafts under their author's name: change them, reply to them, add your own,
+send them to an agent, or download a PDF with comments again to send back.
+Importing that PDF on the first side adds the answers to the threads of the
+original comments; importing a file twice adds nothing. In the panel, a PDF
+that carries comments shows its pages without its own annotations and
+without the closing list, so the comments do not show twice; **Classic**
+shows the file as it is.
 
 ## Live sites
 
@@ -156,6 +183,9 @@ Pages render with the fonts installed on the server, including `~/.fonts`.
 | LibreOffice executable | empty | Full path to `soffice` when it is not on `PATH` or in the usual install folders |
 | Chrome executable | empty | Full path to Chrome, Chromium, or Edge when it is not on `PATH` or in the usual install folders |
 
+The name you sign exported comments with is remembered from the download
+menu.
+
 ## For agents
 
 The bundled skill (`skills/doc-review`) tells the agent how to apply a batch
@@ -167,6 +197,8 @@ bb doc-review list --status all --all-threads
 bb doc-review show <id>                     # with its thread
 bb doc-review resolve <id...> --note "what changed"
 bb doc-review reply <id> --note "question or reason"
+bb doc-review export deck.pptx --as "Name"  # writes "deck (comments).pdf" next to it
+bb doc-review import "deck (comments).pdf" --into deck.pptx
 ```
 
 ## How it works
@@ -230,6 +262,18 @@ bb doc-review reply <id> --note "question or reason"
   plugin's SQLite database; every change publishes a realtime signal that
   open tabs follow. The tab also
   polls the file's version, so the agent's edits show up without reopening it.
+- Exporting (`src/annotate.ts`, `src/exchange.ts`) loads the PDF the pages
+  are shown from with `pdf-lib`, maps each anchor from fractions of the page
+  as shown into the page's own coordinates through its rotation, and writes
+  annotations with their own appearance streams (the badge is part of each),
+  the list pages (in a system sans-serif font found with `fc-match`, for
+  Cyrillic and other scripts), and the comments as JSON
+  (`src/share.ts`) in an embedded file. Annotations are named
+  `doc-review-<id>`, so exporting a PDF that came from an export first
+  removes them, its list pages, and its attachment. A PDF that cannot be
+  edited (encrypted or damaged) is rebuilt from its page images first.
+  Opening a PDF looks for the attachment with `pdfdetach`; importing merges
+  by the ids every comment and reply carries.
 - Sending builds one message (file, then per comment: id, location, quote,
   request, and for a follow-up the thread and the new reply) and sends it to
   the current thread, or spawns a thread in the same
@@ -246,6 +290,13 @@ bb doc-review reply <id> --note "question or reason"
 - In the classic view, comments are not shown; switch back with **Comment**.
   Phones have no usable built-in PDF viewer, so the button is hidden there.
 - A text selection that spans two pages keeps the part on the first page.
+- Comments go into exported PDFs from PDF, Word, and PowerPoint files only;
+  Markdown, HTML, workbooks, and live sites are not exported. An imported
+  comment edited on the other side comes back with its original text: only
+  new replies and new comments travel back.
+- Comments imported into a Word or PowerPoint file are placed by the other
+  side's rendering of it; a different LibreOffice or fonts can shift them
+  slightly.
 - Relative file links in Markdown open only when the file belongs to a thread
   (its workspace or thread storage); a link to another file opens that file
   at its top, without jumping to its `#section`.
@@ -265,7 +316,7 @@ bb doc-review reply <id> --note "question or reason"
 
 ```sh
 npm install
-npm test           # vitest: formats, conversions, caches, workbook readers, anchors
+npm test           # vitest: formats, conversions, caches, workbook readers, anchors, exports
 npx tsc --noEmit
 bb plugin build .
 bb plugin dev .    # rebuild + reload on save

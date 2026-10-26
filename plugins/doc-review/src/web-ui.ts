@@ -275,7 +275,7 @@ export const WEB_UI_SCRIPT = String.raw`(function () {
     });
     if (state.mode === "draw") {
       items.push(h("span", { class: "sep" }));
-      [["pen", "Pen"], ["arrow", "Arrow"]].forEach(function (entry) {
+      [["pen", "Pen"], ["line", "Line"], ["arrow", "Arrow"], ["rect", "Box"]].forEach(function (entry) {
         items.push(button(entry[1], function () { state.tool = entry[0]; syncBridge(); render(); }, { pressed: state.tool === entry[0] }));
       });
     }

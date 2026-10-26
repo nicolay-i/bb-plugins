@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { Capture } from "../src/contract";
-import { HTML_SANDBOX, type Anchor, type DrawMark, type DrawTool, type ReviewComment, type Stroke } from "../src/types";
+import { HTML_SANDBOX, isDrawTool, type Anchor, type DrawMark, type DrawTool, type ReviewComment, type Stroke } from "../src/types";
 import type { Point } from "./markdown-doc";
 import type { PageMode } from "./pages-doc";
 import { DrawingBar } from "./drawing-bar";
@@ -36,7 +36,7 @@ function readStrokes(value: unknown): Stroke[] | null {
   for (const raw of value as unknown[]) {
     const item = raw as Record<string, unknown> | null;
     const points = item?.points;
-    if (!item || (item.tool !== "pen" && item.tool !== "arrow") || !Array.isArray(points)) return null;
+    if (!item || !isDrawTool(item.tool) || !Array.isArray(points)) return null;
     if (points.length < 2 || points.length > 4000 || points.length % 2 !== 0 || !points.every(finite)) return null;
     strokes.push({ tool: item.tool, points: points as number[] });
   }

@@ -265,7 +265,14 @@ export function createViewer(
     );
   }
 
-  return { mintLink, localFile, convertedPdf, withWorkbook };
+  /** A link to a file the plugin made on this machine, such as an export, served as `name`. */
+  async function mintOwnFile(file: { path: string; name: string; contentType: string }): Promise<ViewerLink> {
+    const stats = await stat(file.path);
+    const { id, expiresAtMs } = registry.register({ ...file, sizeBytes: stats.size });
+    return { url: `/api/v1/plugins/${bb.pluginId}/http${DOCUMENT_ROUTE}?id=${id}`, expiresAtMs };
+  }
+
+  return { mintLink, mintOwnFile, localFile, convertedPdf, withWorkbook };
 }
 
 /**

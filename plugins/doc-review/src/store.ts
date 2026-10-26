@@ -2,6 +2,7 @@
 // document, one per comment, and one per message in a comment's thread. The
 // file itself is never modified.
 import { createHash, randomBytes } from "node:crypto";
+import { UNNAMED, type SharedComment } from "./share.js";
 import type { Anchor, CommentReply, CommentStatus, DocKind, ReviewComment } from "./types.js";
 
 /** The subset of better-sqlite3 this module uses. */
@@ -60,6 +61,12 @@ export const MIGRATIONS = [
        CASE status WHEN 'resolved' THEN 'resolved' ELSE 'replied' END,
        COALESCE(resolved_at, updated_at), COALESCE(resolved_at, updated_at)
      FROM comments WHERE agent_note IS NOT NULL AND agent_note != ''`,
+  // 0.6: comments and replies imported from another reviewer's PDF.
+  `ALTER TABLE comments ADD COLUMN author TEXT`,
+  `ALTER TABLE comments ADD COLUMN origin_id TEXT`,
+  `ALTER TABLE comments ADD COLUMN origin_file TEXT`,
+  `ALTER TABLE replies ADD COLUMN name TEXT`,
+  `ALTER TABLE replies ADD COLUMN origin_id TEXT`,
 ];
 
 export interface DocRow {
@@ -90,12 +97,17 @@ interface RawComment {
   sent_thread_id: string | null;
   agent_note: string | null;
   resolved_at: number | null;
+  author: string | null;
+  origin_id: string | null;
+  origin_file: string | null;
 }
 
 interface RawReply {
   id: string;
   comment_id: string;
   author: CommentReply["author"];
+  name: string | null;
+  origin_id: string | null;
   body: string;
   outcome: CommentReply["outcome"];
   created_at: number;
@@ -139,6 +151,8 @@ function toReply(raw: RawReply): CommentReply {
   return {
     id: raw.id,
     author: raw.author,
+    name: raw.name,
+    originId: raw.origin_id,
     body: raw.body,
     outcome: raw.outcome,
     createdAt: raw.created_at,
@@ -154,6 +168,9 @@ function toComment(raw: RawComment, thread: CommentReply[]): ReviewComment {
     status: raw.status,
     anchor: JSON.parse(raw.anchor) as Anchor,
     body: raw.body,
+    author: raw.author,
+    originId: raw.origin_id,
+    originFile: raw.origin_file,
     docVersion: raw.doc_version,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
@@ -333,6 +350,119 @@ export class ReviewStore {
     });
     const id = create();
     return this.requireComment(id);
+  }
+
+  /**
+   * Comments from another reviewer's export, merged into a document. One seen
+   * before (by its id here, or the id it had where it came from) only gains
+   * the replies it lacks, and asks for attention if it was already sent. A new
+   * one arrives as a draft under its author's name, with its thread.
+   */
+  importComments(input: {
+    docId: string;
+    docVersion: string | null;
+    /** The file the comments were written on, kept when it is not this one. */
+    originFile: string | null;
+    comments: readonly SharedComment[];
+  }): { added: number; updated: number } {
+    const now = Date.now();
+    const find = this.db.prepare(`SELECT id, status FROM comments WHERE doc_id = ? AND (id = ? OR origin_id = ?)`);
+    const known = this.db.prepare(`SELECT id, origin_id FROM replies WHERE comment_id = ?`);
+    const addReply = this.db.prepare(
+      `INSERT INTO replies (id, comment_id, author, body, outcome, created_at, sent_at, name, origin_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const run = this.db.transaction(() => {
+      let added = 0;
+      let updated = 0;
+      for (const shared of input.comments) {
+        const thread = shared.thread.map((reply) => ({
+          ...reply,
+          // Someone else's words always carry a name, so they never read as "You".
+          name: reply.name ?? (reply.author === "agent" ? null : UNNAMED),
+        }));
+        const existing = find.get(input.docId, shared.id, shared.id) as { id: string; status: CommentStatus } | undefined;
+        if (existing) {
+          const ids = new Set(
+            (known.all(existing.id) as { id: string; origin_id: string | null }[]).flatMap((row) => [row.id, row.origin_id]),
+          );
+          const fresh = thread.filter((reply) => !ids.has(reply.id));
+          for (const reply of fresh) {
+            addReply.run(newId("r_"), existing.id, reply.author, reply.body, reply.outcome, reply.createdAt, reply.createdAt, reply.name, reply.id);
+          }
+          if (fresh.length > 0) {
+            this.db
+              .prepare(
+                `UPDATE comments SET status = CASE WHEN status = 'draft' THEN 'draft' ELSE 'replied' END,
+                   resolved_at = CASE WHEN status = 'draft' THEN resolved_at ELSE NULL END, updated_at = ?
+                 WHERE id = ?`,
+              )
+              .run(now, existing.id);
+            updated += 1;
+          }
+          continue;
+        }
+        const doc = this.db.prepare(`SELECT next_seq FROM docs WHERE id = ?`).get(input.docId) as
+          | { next_seq: number }
+          | undefined;
+        if (!doc) throw new Error(`Unknown document ${input.docId}`);
+        const id = newId("c_");
+        this.db
+          .prepare(
+            `INSERT INTO comments (id, doc_id, seq, status, anchor, body, doc_version, created_at, updated_at,
+               author, origin_id, origin_file)
+             VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            id,
+            input.docId,
+            doc.next_seq,
+            JSON.stringify(shared.anchor),
+            shared.body,
+            input.docVersion,
+            shared.createdAt,
+            now,
+            shared.author ?? UNNAMED,
+            shared.id,
+            input.originFile,
+          );
+        this.db.prepare(`UPDATE docs SET next_seq = next_seq + 1 WHERE id = ?`).run(input.docId);
+        for (const reply of thread) {
+          addReply.run(newId("r_"), id, reply.author, reply.body, reply.outcome, reply.createdAt, reply.createdAt, reply.name, reply.id);
+        }
+        added += 1;
+      }
+      return { added, updated };
+    });
+    return run();
+  }
+
+  /** How many of these comments an import would bring into the document: missing, or missing a reply. */
+  countPending(docId: string, comments: readonly SharedComment[]): number {
+    const find = this.db.prepare(`SELECT id FROM comments WHERE doc_id = ? AND (id = ? OR origin_id = ?)`);
+    const replies = this.db.prepare(`SELECT id, origin_id FROM replies WHERE comment_id = ?`);
+    return comments.filter((comment) => {
+      const row = find.get(docId, comment.id, comment.id) as { id: string } | undefined;
+      if (!row) return true;
+      const known = new Set(
+        (replies.all(row.id) as { id: string; origin_id: string | null }[]).flatMap((reply) => [reply.id, reply.origin_id]),
+      );
+      return comment.thread.some((reply) => !known.has(reply.id));
+    }).length;
+  }
+
+  /** Documents holding any of these comments (by their id or the id they came with), most first. */
+  docsHolding(ids: readonly string[]): string[] {
+    if (ids.length === 0) return [];
+    const marks = ids.map(() => "?").join(", ");
+    return (
+      this.db
+        .prepare(
+          `SELECT doc_id, COUNT(*) AS n FROM comments WHERE id IN (${marks}) OR origin_id IN (${marks})
+           GROUP BY doc_id ORDER BY n DESC`,
+        )
+        .all(...ids, ...ids) as { doc_id: string }[]
+    ).map((row) => row.doc_id);
   }
 
   updateBody(id: string, body: string): ReviewComment {

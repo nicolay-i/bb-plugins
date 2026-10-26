@@ -22,6 +22,7 @@
 // The bridge is plain ES2019 kept as a string, so it runs in any page as is.
 
 import { DRAW_STEP, DRAWING_JS } from "./drawing.js";
+import { DRAW_TOOLS } from "./types.js";
 
 export { HTML_SANDBOX } from "./types.js";
 
@@ -70,6 +71,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
   var drawHold = null;
   var sketchShown = false;
   var DRAW_STEP = ${DRAW_STEP};
+  var DRAW_TOOLS = ${JSON.stringify(DRAW_TOOLS)};
   ${DRAWING_JS}
 
   function sendTo(target, message) {
@@ -559,7 +561,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
   function extendStroke(event) {
     var at = pagePoint(event);
     var p = stroke.points;
-    if (stroke.tool === "arrow") {
+    if (drawingShape(stroke.tool)) {
       stroke.points = [p[0], p[1], at[0], at[1]];
     } else {
       var n = p.length;
@@ -573,9 +575,8 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
     stroke = null;
     if (!done) return;
     var p = done.points;
-    // An arrow needs a direction; a click in arrow mode draws nothing.
-    var shortArrow = done.tool === "arrow" && (p.length < 4 || Math.abs(p[2] - p[0]) + Math.abs(p[3] - p[1]) < 8);
-    if (!shortArrow && sketch.length < 60) {
+    // A click with a shape tool draws nothing.
+    if (drawingKept(done, 1, 1) && sketch.length < 60) {
       if (p.length === 2) p.push(p[0], p[1]);
       sketch.push(done);
     }
@@ -771,6 +772,11 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       });
     })).then(function () { return results; });
   }
+  function lineSteps(x0, y0, x1, y1, count) {
+    var out = [];
+    for (var i = 0; i <= count; i += 1) out.push(x0 + ((x1 - x0) * i) / count, y0 + ((y1 - y0) * i) / count);
+    return out;
+  }
   function samplesOf(points, count) {
     var n = points.length / 2;
     var out = [];
@@ -804,11 +810,14 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       var w = b.x1 - b.x0;
       var h = b.y1 - b.y0;
       var gap = Math.abs(p[n - 2] - p[0]) + Math.abs(p[n - 1] - p[1]);
-      if (n >= 16 && w >= 16 && h >= 16 && gap <= Math.max(24, 0.35 * Math.max(w, h))) {
+      var box = strokes[s].tool === "rect";
+      if (box || (n >= 16 && w >= 16 && h >= 16 && gap <= Math.max(24, 0.35 * Math.max(w, h)))) {
         queries.push({ x: (b.x0 + b.x1) / 2 - window.scrollX, y: (b.y0 + b.y1) / 2 - window.scrollY, loop: { w: w * 1.2, h: h * 1.2 } });
         plans.push({ kind: "loop", first: first });
         continue;
       }
+      // A straight line is sampled along its length, like a pen stroke.
+      if (strokes[s].tool === "line") p = lineSteps(p[0], p[1], p[n - 2], p[n - 1], 24);
       var samples = samplesOf(p, 24);
       for (var i = 0; i < samples.length; i += 1) queries.push(samples[i]);
       plans.push({ kind: "line", first: first, count: samples.length });
@@ -1102,7 +1111,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       var next = data.mode === "element" || data.mode === "draw" || data.mode === "idle" ? data.mode : "text";
       if (next !== "draw" && mode === "draw") clearSketch();
       mode = next;
-      if (data.tool === "pen" || data.tool === "arrow") tool = data.tool;
+      if (DRAW_TOOLS.indexOf(data.tool) >= 0) tool = data.tool;
       document.documentElement.setAttribute("data-doc-review-mode", mode);
       applyDrawMode();
       if (mode !== "element") showHover(null);

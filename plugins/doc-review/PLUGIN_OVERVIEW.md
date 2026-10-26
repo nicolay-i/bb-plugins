@@ -2,11 +2,12 @@
 
 - A tab beside the chat for Markdown, PDF, Word, PowerPoint, Excel, and HTML files. Links in messages, the file picker, and `bb thread open` all land there.
 - Comments on selected text, on a box drawn around a chart or picture, on spreadsheet cells and ranges, on any element of an HTML page, or on the whole document. Right-click a selection or press Cmd+Option+M (Ctrl+Alt+M) to comment without reaching for the mouse.
-- Drawing over HTML pages, PDFs, and slides: cross out a button, circle a block, draw an arrow to where it should move, and comment on the drawing. The agent gets a picture of your strokes over the page as you saw it, and on HTML the elements each stroke touches.
+- Drawing over HTML pages, PDFs, and slides with a pen, a straight line, an arrow, or a box: cross out a button, frame a block, draw an arrow to where it should move, and comment on the drawing. The agent gets a picture of your strokes over the page as you saw it, and on HTML the elements each stroke touches.
 - Drafts that wait until you send them: to the current chat, or to a new chat in the same project and workspace with the same model.
 - A status on every comment that follows the agent's work: waiting, done with a note on what changed, or needs you when the agent answered with a question.
 - Live sites in bb's browser (desktop app): press Review beside the address bar and comment on the running page itself, by text, element, or drawing. Comments stay on their pages across reloads and deploys, and Send hands them to the chat that owns the tab.
 - A thread under every comment: answer the agent's question or correct what it did, and the agent replies in the same place, as many rounds as it takes.
+- A PDF with comments to send to anyone: highlights, boxes, and drawings as annotations any PDF viewer shows, numbered, with a list of every comment at the end. Doc Review in another bb imports the comments from it, so a colleague can reply, change them, or hand them to an agent, and send the file back with the answers.
 - A **Doc Review** page in the sidebar with the files you commented on, recent files, and a folder browser.
 
 ## How the hand-off works

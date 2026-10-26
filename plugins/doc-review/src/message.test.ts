@@ -9,6 +9,9 @@ function comment(id: string, anchor: Anchor, body: string): ReviewComment {
     status: "draft",
     anchor,
     body,
+    author: null,
+    originId: null,
+    originFile: null,
     docVersion: null,
     createdAt: 0,
     updatedAt: 0,
@@ -77,10 +80,10 @@ describe("follow-ups in the hand-off message", () => {
     const followUp: ReviewComment = {
       ...comment("c_talk", { kind: "doc" }, "Move the mood block to settings"),
       thread: [
-        { id: "r_1", author: "agent", body: "Into settings?\nOr remove it?", outcome: "replied", createdAt: 1, sentAt: 1 },
-        { id: "r_2", author: "user", body: "Settings", createdAt: 2, sentAt: 2, outcome: null },
-        { id: "r_3", author: "agent", body: "Moved", outcome: "resolved", createdAt: 3, sentAt: 3 },
-        { id: "r_4", author: "user", body: "Keep it on check-in too", createdAt: 4, sentAt: null, outcome: null },
+        { id: "r_1", author: "agent", name: null, originId: null, body: "Into settings?\nOr remove it?", outcome: "replied", createdAt: 1, sentAt: 1 },
+        { id: "r_2", author: "user", name: null, originId: null, body: "Settings", createdAt: 2, sentAt: 2, outcome: null },
+        { id: "r_3", author: "agent", name: null, originId: null, body: "Moved", outcome: "resolved", createdAt: 3, sentAt: 3 },
+        { id: "r_4", author: "user", name: null, originId: null, body: "Keep it on check-in too", createdAt: 4, sentAt: null, outcome: null },
       ],
     };
     const text = buildHandoffMessage({

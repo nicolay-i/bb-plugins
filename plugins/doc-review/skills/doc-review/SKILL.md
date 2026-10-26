@@ -1,6 +1,6 @@
 ---
 name: doc-review
-description: Apply review comments that the user left on a Markdown, PDF, Word, PowerPoint, Excel, or HTML file in bb's Doc Review panel, and report each one back with `bb doc-review`. Use when a message starts with "Review comments on" or lists comment ids like c_ab12cd, or when the user asks to handle, fix, or answer their review comments.
+description: Apply review comments that the user left on a Markdown, PDF, Word, PowerPoint, Excel, or HTML file in bb's Doc Review panel, and report each one back with `bb doc-review`; export a file's comments into a PDF to send, or import comments from such a PDF. Use when a message starts with "Review comments on" or lists comment ids like c_ab12cd, when the user asks to handle, fix, or answer their review comments, or to send, export, or import comments as a PDF.
 ---
 
 # Doc Review comments
@@ -14,6 +14,12 @@ report each one as you finish it.
 Every comment keeps a thread: your notes from `resolve` and `reply` go into
 it, and the user can answer back. An answer comes as a follow-up: the
 comment, then `>` lines quoting the thread so far, then `User's new reply:`.
+
+A comment headed `From <name>:` came from another reviewer's PDF that the
+user imported and is passing on: treat it as the user's request. `>` lines
+under it are that reviewer's conversation, named. When it says `written on
+<file>`, it was made on that file (the deck or document the PDF was exported
+from): apply it there.
 
 ## Procedure
 
@@ -79,6 +85,8 @@ comment, then `>` lines quoting the thread so far, then `User's new reply:`.
 | `bb doc-review show <id>` | One comment in full, including its exact anchor and thread. |
 | `bb doc-review resolve <id...> --note "…"` | Mark done with a note on what changed. |
 | `bb doc-review reply <id> --note "…"` | Answer without resolving; the user can answer back. |
+| `bb doc-review export <file> [--as "Name"] [--out <pdf>]` | A PDF of a PDF, Word, or PowerPoint file with its comments as annotations, numbered, listed at the end, and attached for Doc Review; written next to the file as `<name> (comments).pdf` by default. |
+| `bb doc-review import <pdf> [--into <file>]` | Brings in the comments such a PDF carries, into the PDF or the file they were written on; new ones wait as drafts, known ones only gain new replies. |
 
 Add `--json` when the output drives code.
 

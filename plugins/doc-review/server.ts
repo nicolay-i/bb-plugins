@@ -16,6 +16,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isSupportedPath } from "./lib/formats.js";
 import { rpcContract, type Capture, type RecentDocument } from "./src/contract.js";
 import { reviewCli } from "./src/cli.js";
+import { createExchange } from "./src/exchange.js";
 import { DocFiles } from "./src/files.js";
 import { BRIDGE_SCRIPT, HTML_SANDBOX, injectIntoHtml } from "./src/html-bridge.js";
 import { buildHandoffMessage } from "./src/message.js";
@@ -29,6 +30,7 @@ import {
   isDrawing,
   isPaged,
   MARKDOWN_EXTENSIONS,
+  sharedWithOthers,
   type ReviewComment,
   type ReviewDoc,
 } from "./src/types.js";
@@ -54,6 +56,8 @@ const HTML_MAX_BYTES = 20 * 1024 * 1024;
 const NO_PROJECT =
   "This file is not in a project, so a new chat cannot be started from here.";
 const RECENTS_KEY = "recent-documents";
+/** The name exported comments are signed with, as last used. */
+const SIGNER_KEY = "export-signer";
 const RECENTS_LIMIT = 12;
 
 /** Thrown where pages are needed but LibreOffice cannot make them. */
@@ -199,6 +203,20 @@ export default async function plugin(bb: BbPluginApi) {
     return converted;
   }
 
+  const exchange = createExchange({
+    store,
+    files,
+    renderer,
+    dataDir,
+    pdfFor,
+    currentVersion,
+    log: (message) => bb.log.warn(message),
+  });
+
+  async function readSigner(): Promise<string | null> {
+    return (await bb.storage.kv.get<string>(SIGNER_KEY)) || null;
+  }
+
   async function readRecents(): Promise<RecentDocument[]> {
     return (await bb.storage.kv.get<RecentDocument[]>(RECENTS_KEY)) ?? [];
   }
@@ -240,7 +258,9 @@ export default async function plugin(bb: BbPluginApi) {
       const size = (await renderer.pageSizes(doc.id, version, pdf))[n - 1];
       if (!size) return context.text("Not found", 404);
       const width = renderWidth(size, Number.isFinite(requested) ? requested : null);
-      const image = await renderer.pageImage(doc.id, version, pdf, n, width);
+      // A PDF exported with comments shows them as Doc Review's own, not twice.
+      const clean = (await exchange.sharedIn(doc)) !== null;
+      const image = await renderer.pageImage(doc.id, version, pdf, n, width, clean);
       const bytes = await readFile(image);
       return new Response(new Uint8Array(bytes), {
         headers: {
@@ -450,7 +470,9 @@ export default async function plugin(bb: BbPluginApi) {
         }
         throw error;
       }
-      const sizes = await renderer.pageSizes(doc.id, version, pdf);
+      // A PDF exported with comments: its closing list pages repeat what the panel shows.
+      const shared = await exchange.sharedIn(doc);
+      const sizes = (await renderer.pageSizes(doc.id, version, pdf)).slice(0, shared?.file.pages);
       const base = `/api/v1/plugins/${bb.pluginId}/http${PAGE_ROUTE}`;
       const v = encodeURIComponent(version);
       return {
@@ -572,7 +594,8 @@ export default async function plugin(bb: BbPluginApi) {
     async "comments.reply"({ id, body }) {
       const existing = store.getComment(id);
       if (!existing) throw new Error("This comment was deleted.");
-      if (existing.status === "draft" && !draftReply(existing)) {
+      // Another reviewer's comment takes a reply before it is sent: the answer goes back with the PDF.
+      if (existing.status === "draft" && !draftReply(existing) && !sharedWithOthers(existing)) {
         throw new Error("This comment is not sent yet; edit it instead.");
       }
       const comment = store.saveReply(id, body);
@@ -716,6 +739,38 @@ export default async function plugin(bb: BbPluginApi) {
       return { prompt, ids: comments.map((comment) => comment.id) };
     },
 
+    async "export.signer"() {
+      return { signer: await readSigner() };
+    },
+
+    async "doc.export"({ docId, signer }) {
+      const doc = requireDoc(docId);
+      const name = signer?.trim() || null;
+      await bb.storage.kv.set(SIGNER_KEY, name ?? "");
+      const exported = await exchange.exportPdf(doc, name);
+      const file = await exchange.saveExport(exported.bytes);
+      const link = await viewer.mintOwnFile({ path: file, name: exported.name, contentType: "application/pdf" });
+      return { link, name: exported.name, count: exported.count };
+    },
+
+    async "doc.shared"({ docId }) {
+      return { shared: await exchange.summary(requireDoc(docId)) };
+    },
+
+    async "comments.import"({ docId, into }) {
+      const source = requireDoc(docId);
+      let target: DocRow = source;
+      if (into === "original") {
+        const shared = await exchange.sharedIn(source);
+        const original = shared ? await exchange.originalOf(source, shared) : null;
+        if (!original) throw new Error("The file these comments were written on is not next to this PDF.");
+        target = original;
+      }
+      const result = await exchange.importInto(source, target);
+      publish([source.id, target.id]);
+      return { docId: target.id, name: path.posix.basename(target.absPath), ...result };
+    },
+
     async "comments.markSent"({ ids, threadId }) {
       const docIds = new Set<string>();
       for (const id of ids) {
@@ -728,5 +783,20 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.cli.register(reviewCli({ bb, store, onChanged: publish }));
+  bb.cli.register(
+    reviewCli({
+      bb,
+      store,
+      onChanged: publish,
+      exchange,
+      openDoc: async (absPath, hostId) => {
+        const kind = docKindFor(absPath);
+        if (!kind) throw new Error("Doc Review opens Markdown, PDF, Word, PowerPoint, Excel, and HTML files.");
+        const doc = store.upsertDoc(hostId, absPath, kind);
+        if ((await files.version(doc)) === null) throw new Error(`No such file: ${absPath}`);
+        return doc;
+      },
+      readSigner,
+    }),
+  );
 }
