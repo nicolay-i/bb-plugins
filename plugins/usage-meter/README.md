@@ -24,6 +24,8 @@ the popup row is marked with the same dot.
 - **Click** — the same popup, pinned: it survives the cursor leaving. Closes on
   a second click, on Escape, or on a click outside.
 
+<img src="../../media/usage-meter/rings.gif" width="500" alt="Hovering the rings opens the popup with every limit window; a click pins it, Escape closes it">
+
 The outer ring repeats the geometry of the neighbouring
 [server-status](../server-status) plugin: same path along the button's edge,
 same thickness, same animation. The two buttons sit next to each other in the
@@ -31,12 +33,18 @@ footer and should read as one system. The neighbour's colour thresholds are its
 own (80% and 90% of RAM usage) — different quantities, under no obligation to
 match.
 
+<img src="../../media/usage-meter/popup.png" width="500" alt="The popup: plan, session, week and per-model limits with reset times">
+
+*The pictures show sample figures, not a real machine.*
+
 ## The Usage page
 
 The rings answer "how much is left". The page answers "what spent it", from the
 transcripts Claude Code writes on this machine (`~/.claude/projects`, about two
 gigabytes of them here). Two sliding windows, **Day** (last 24h) and **Week**
 (last 7d); the choice lives in the URL, so a link to a window survives a reload.
+
+![The top of the Usage page: plan limits, usage over the window as a stacked chart, and the first statements](../../media/usage-meter/usage-page.png)
 
 Top half — the same summary the Claude Code extension for VS Code shows, and
 deliberately so: the same weighted-cost formula, the same five behaviours, the
@@ -86,6 +94,10 @@ Bottom half is ours, and the extension has no counterpart for it:
 - **Usage over the window** — a hand-drawn SVG chart, stacked by main session /
   workflow agents / subagents, bucketed by the hour for a day and by six hours
   for a week, on the local clock.
+
+![Switching between Day and Week, then scrolling down through skills, workflow runs, projects and threads](../../media/usage-meter/usage-page.gif)
+
+*The pictures show sample figures, not a real machine.*
 
 Those figures are counted in **tokens**, and the columns say so: mixing them
 silently with the weighted percentages above would make the whole page

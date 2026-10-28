@@ -8,6 +8,8 @@ new one. The agent closes each comment with a note, so the tab shows what was
 fixed and what still needs you, and you answer it right in the comment's
 thread.
 
+![A PDF report in Doc Review with its comment list: the agent asked a question, got an answer, reported back, and a new reply is being typed](../../media/doc-review/catalog-reply.png)
+
 Version 0.2 absorbed the Document Viewer plugin (`pdf-viewer`): its Word,
 PowerPoint, and Excel rendering and its classic PDF view live here now.
 
@@ -49,6 +51,8 @@ converts once and reopens at once.
 
 ## Commenting
 
+![Select a line of Markdown, press Comment, type, and the comment lands in the list as a draft](../../media/doc-review/comment-text.gif)
+
 - **Text:** select it and press **Comment**, right-click it, or press ⌘⌥M.
 - **Area:** on pages and slides, switch to **Area** and draw a box around a
   chart or picture; the comment carries an image of that region.
@@ -79,6 +83,8 @@ converts once and reopens at once.
   mode hold, then drag to draw; in a workbook tap a cell, or hold and drag
   over a range. A drag without the hold scrolls as usual.
 
+![In Draw mode, circle a figure on a PDF page and comment on the drawing](../../media/doc-review/comment-drawing.gif)
+
 The comments button in the toolbar hides the list beside the document for a
 full-width view; the choice is remembered across files, and a click on a
 comment's number on the page brings the list back.
@@ -99,6 +105,8 @@ out with the other drafts on **Send**. The agent gets the comment, the
 thread so far, and your new reply, and answers in the same thread, so the
 exchange runs as long as it needs to, in this chat or a new one.
 
+![Reply under the agent's question, and the answer waits as a draft with the comment](../../media/doc-review/reply.gif)
+
 The **Doc Review** page in the sidebar lists files with comments and their
 status, recent files, and a folder browser, and opens any file by path.
 
@@ -115,6 +123,8 @@ with and press **Download PDF**. In it:
 - each mark carries a numbered badge, and closing pages list every comment
   with its replies by number, for viewers that hide annotation text;
 - the comments ride along as an attachment that Doc Review reads.
+
+![Left: the download menu with PDF with comments and a name to sign with. Right: the exported page with a highlight, a drawing, a box and numbered badges](../../media/doc-review/catalog-export-pdf.png)
 
 When someone with Doc Review opens that PDF in bb, a bar over it offers to
 **Import** the comments: into the PDF, or into the file they were written on

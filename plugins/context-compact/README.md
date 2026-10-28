@@ -5,7 +5,7 @@ thread compacts its context — the same request `/compact` and
 `bb thread compact` make — instead of only showing a hover card with the token
 figures.
 
-![the ring sits at the right end of the composer's footer row](./icon.svg)
+<img src="../../media/context-compact/compact.gif" width="500" alt="Hover the ring for the token figures, click it, and the thread starts compacting">
 
 ## What it does
 
@@ -17,6 +17,8 @@ figures.
 - **Split layouts hit the right thread.** Each composer publishes its own thread
   id, so the ring in a split pane compacts that pane's thread, not the one in
   the address bar.
+
+<img src="../../media/context-compact/compacting.png" width="500" alt="After the click: a compact step in the chat and the Compacting context toast">
 
 BB only compacts an idle or errored thread. Click the ring while the agent is
 working and the toast says so — nothing is queued behind your back.
