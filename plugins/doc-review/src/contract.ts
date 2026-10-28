@@ -3,6 +3,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { SheetData } from "../lib/sheet-model.js";
+import { DRAW_TOOLS } from "./types.js";
 
 const rectSchema = z
   .object({
@@ -14,6 +15,13 @@ const rectSchema = z
   .strict();
 
 const MAX_QUOTE = 4000;
+const MAX_URL = 2000;
+/** The page of a live site a comment was left on. */
+const pageUrlSchema = z
+  .string()
+  .max(MAX_URL)
+  .refine((value) => /^https?:\/\//i.test(value), "Only http and https pages.")
+  .optional();
 const MAX_SELECTOR = 1000;
 const MAX_HTML = 2000;
 const MAX_STROKES = 60;
@@ -23,7 +31,7 @@ const MAX_STROKE_NUMBERS = 4000;
 export const strokeSchema = (coordinate: z.ZodNumber) =>
   z
     .object({
-      tool: z.enum(["pen", "arrow"]),
+      tool: z.enum(DRAW_TOOLS),
       points: z.array(coordinate).min(2).max(MAX_STROKE_NUMBERS),
     })
     .strict()
@@ -85,6 +93,7 @@ export const anchorSchema = z.discriminatedUnion("kind", [
       suffix: z.string().max(200),
       selector: z.string().max(MAX_SELECTOR),
       frame: z.string().min(1).max(MAX_SELECTOR).optional(),
+      url: pageUrlSchema,
     })
     .strict(),
   z
@@ -95,6 +104,7 @@ export const anchorSchema = z.discriminatedUnion("kind", [
       text: z.string().max(MAX_QUOTE),
       html: z.string().max(MAX_HTML),
       frame: z.string().min(1).max(MAX_SELECTOR).optional(),
+      url: pageUrlSchema,
     })
     .strict(),
   z
@@ -111,17 +121,20 @@ export const anchorSchema = z.discriminatedUnion("kind", [
       strokes: z.array(strokeSchema(z.number().min(-1e6).max(1e7))).min(1).max(MAX_STROKES),
       viewport: z.object({ w: z.number().min(1).max(20000), h: z.number().min(1).max(20000) }).strict(),
       marks: z.array(drawMarkSchema).max(MAX_STROKES * 3),
+      url: pageUrlSchema,
     })
     .strict(),
 ]);
 
 /**
  * What a drawing looked like, for the image the agent gets: a finished PNG
- * (pages compose it from the page image), or the HTML page as it stood when
- * it was drawn on, which the server photographs with the strokes on top.
+ * (pages compose it from the page image), the HTML page as it stood when it
+ * was drawn on, which the server photographs with the strokes on top, or a
+ * screenshot of a live page that the server took and keeps (`web.capture`).
  */
 export const captureSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("png"), data: z.string().min(1).max(16 * 1024 * 1024) }).strict(),
+  z.object({ kind: z.literal("shot"), token: z.string().uuid() }).strict(),
   z
     .object({
       kind: z.literal("html"),
@@ -134,12 +147,26 @@ export const captureSchema = z.discriminatedUnion("kind", [
 
 const statusSchema = z.enum(["draft", "sent", "replied", "resolved"]);
 
+const replySchema = z.object({
+  id: z.string(),
+  author: z.enum(["user", "agent"]),
+  name: z.string().nullable(),
+  originId: z.string().nullable(),
+  body: z.string(),
+  outcome: z.enum(["replied", "resolved"]).nullable(),
+  createdAt: z.number(),
+  sentAt: z.number().nullable(),
+});
+
 export const commentSchema = z.object({
   id: z.string(),
   seq: z.number(),
   status: statusSchema,
   anchor: anchorSchema,
   body: z.string(),
+  author: z.string().nullable(),
+  originId: z.string().nullable(),
+  originFile: z.string().nullable(),
   docVersion: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -147,10 +174,11 @@ export const commentSchema = z.object({
   sentThreadId: z.string().nullable(),
   agentNote: z.string().nullable(),
   resolvedAt: z.number().nullable(),
+  thread: z.array(replySchema),
   imageUrl: z.string().optional(),
 });
 
-const kindSchema = z.enum(["md", "pdf", "text", "presentation", "spreadsheet", "html"]);
+const kindSchema = z.enum(["md", "pdf", "text", "presentation", "spreadsheet", "html", "web"]);
 
 const docSchema = z.object({
   id: z.string(),
@@ -230,6 +258,7 @@ const sendTargetSchema = z.discriminatedUnion("kind", [
 ]);
 
 const BODY_MAX = 8000;
+const signerSchema = z.string().trim().max(120).nullable();
 
 export const rpcContract = defineRpcContract({
   "doc.open": {
@@ -242,6 +271,38 @@ export const rpcContract = defineRpcContract({
       })
       .strict(),
     output: z.object({ doc: docSchema }),
+  },
+  /**
+   * Files attached to the thread's messages, newest first; with `seq`, the
+   * files on that message.
+   */
+  "attachments.list": {
+    input: z.object({ threadId: z.string().min(1), seq: z.number().int().nullable() }).strict(),
+    output: z.object({
+      files: z.array(z.object({ name: z.string(), path: z.string(), supported: z.boolean() })),
+    }),
+  },
+  /** Copies an attachment into the thread's storage for review; returns its path there. */
+  "attachments.open": {
+    input: z
+      .object({ threadId: z.string().min(1), path: z.string().min(1).max(512), name: z.string().min(1).max(512) })
+      .strict(),
+    output: z.object({ path: z.string() }),
+  },
+  /** A live site opened in bb's browser: one document per origin. */
+  "web.open": {
+    input: z.object({ url: z.string().min(1).max(MAX_URL) }).strict(),
+    output: z.object({ doc: docSchema }),
+  },
+  /**
+   * A screenshot of a Browser tab in bb Desktop, for a drawing's picture.
+   * The server keeps it and returns a token for `comments.create`, so the
+   * picture does not travel back to the panel; fails when no connected
+   * desktop app has the tab.
+   */
+  "web.capture": {
+    input: z.object({ threadId: z.string().min(1), tabId: z.string().min(1) }).strict(),
+    output: z.object({ token: z.string() }),
   },
   "doc.get": {
     input: z.object({ docId: z.string() }).strict(),
@@ -405,6 +466,17 @@ export const rpcContract = defineRpcContract({
       .strict(),
     output: commentSchema,
   },
+  /** The user's answer in a comment's thread, kept as a draft until sent. */
+  "comments.reply": {
+    input: z
+      .object({ id: z.string(), body: z.string().trim().min(1).max(BODY_MAX) })
+      .strict(),
+    output: commentSchema,
+  },
+  "comments.discardReply": {
+    input: z.object({ id: z.string() }).strict(),
+    output: commentSchema,
+  },
   "comments.delete": {
     input: z.object({ id: z.string() }).strict(),
     output: z.object({ deleted: z.boolean() }),
@@ -435,6 +507,36 @@ export const rpcContract = defineRpcContract({
       .object({ ids: z.array(z.string()).min(1).max(500), threadId: z.string().nullable() })
       .strict(),
     output: z.object({ sent: z.number() }),
+  },
+  /** The name the user signs exported comments with, as last used. */
+  "export.signer": {
+    input: z.null(),
+    output: z.object({ signer: z.string().nullable() }),
+  },
+  /** A PDF of a paged document with its comments, to download. */
+  "doc.export": {
+    input: z.object({ docId: z.string(), signer: signerSchema }).strict(),
+    output: z.object({ link: linkSchema, name: z.string(), count: z.number() }),
+  },
+  /** Comments a PDF carries from another bb's export, if any. */
+  "doc.shared": {
+    input: z.object({ docId: z.string() }).strict(),
+    output: z.object({
+      shared: z
+        .object({
+          by: z.string().nullable(),
+          file: z.string(),
+          count: z.number(),
+          newHere: z.number(),
+          original: z.object({ path: z.string(), kind: kindSchema, newThere: z.number() }).nullable(),
+        })
+        .nullable(),
+    }),
+  },
+  /** Brings those comments in: into this PDF, or into the file they were written on. */
+  "comments.import": {
+    input: z.object({ docId: z.string(), into: z.enum(["here", "original"]) }).strict(),
+    output: z.object({ docId: z.string(), name: z.string(), added: z.number(), updated: z.number() }),
   },
 });
 

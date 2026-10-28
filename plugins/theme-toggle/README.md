@@ -8,8 +8,12 @@ Theme switching one click away, in the bb sidebar footer.
 - **Hold (400 ms) or right-click** — the same menu, for touch and for people
   who would rather ask for it.
 
+<img src="../../media/theme-toggle/toggle.gif" width="640" alt="Two clicks flip bb to dark and back; resting the cursor on the button opens the menu, and Dark is picked from it">
+
 The menu lists light / dark / system appearance and every palette on the host,
 including ones contributed by other plugins.
+
+<img src="../../media/theme-toggle/menu.png" width="640" alt="The menu: Light, Dark, System, then every palette on the host">
 
 The button wears a square cut from the top-right corner to the bottom-left
 one: day above the cut, night below it. The half that is on is filled and holds

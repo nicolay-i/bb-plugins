@@ -5,7 +5,7 @@ export function mountDrawingCaptions() {
     const images = [...root.querySelectorAll<HTMLImageElement>('button > img[alt^="comment-"]')];
     if (root instanceof HTMLImageElement && root.matches('button > img[alt^="comment-"]')) images.push(root);
     images.forEach((image) => {
-      const match = /^comment-(\d+)-c_[a-z0-9]+(?:-|\.png$)/.exec(image.alt);
+      const match = /^comment-(\d+)-c_[a-z0-9]+(?:-|\.(?:png|jpe?g)$)/.exec(image.alt);
       if (!match) return;
       const button = image.parentElement!;
       let caption = button.querySelector<HTMLSpanElement>("[data-doc-review-caption]");

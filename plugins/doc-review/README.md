@@ -1,10 +1,14 @@
 # Doc Review
 
 Read and comment on documents inside bb: Markdown, PDF, Word, PowerPoint,
-Excel, and HTML open in a panel tab beside the chat. Comment the way you would in Figma,
+Excel, and HTML open in a panel tab beside the chat, and a live site opened in
+bb's browser takes comments right on its pages. Comment the way you would in Figma,
 then hand every comment to an agent in one message — in the current chat or a
 new one. The agent closes each comment with a note, so the tab shows what was
-fixed and what still needs you.
+fixed and what still needs you, and you answer it right in the comment's
+thread.
+
+![A PDF report in Doc Review with its comment list: the agent asked a question, got an answer, reported back, and a new reply is being typed](../../media/doc-review/catalog-reply.png)
 
 Version 0.2 absorbed the Document Viewer plugin (`pdf-viewer`): its Word,
 PowerPoint, and Excel rendering and its classic PDF view live here now.
@@ -21,7 +25,14 @@ PowerPoint, and Excel rendering and its classic PDF view live here now.
 | `.html`, `.htm` | The live page in a sandboxed frame: its styles, pictures, and scripts next to the file load as usual |
 
 Any matching file opened in bb — a link in a message, the file picker,
-`bb thread open` — renders in a panel tab. On pages, **Classic** switches to
+`bb thread open` — renders in a panel tab. A file attached to a chat message
+is the exception: its chip opens bb's own preview, which plugins cannot take
+over. For those, press the Doc Review button in the message's action bar, or
+add a **Doc Review** tab to the chat's side panel: it lists the files attached
+in the chat and opens the one you pick (straight away when there is only
+one). Doc Review works on a copy kept in the chat's storage, in a `Doc
+Review` folder, so the agent you send the comments to changes the file you
+commented on; opening the attachment again opens the same copy. On pages, **Classic** switches to
 the browser's own PDF viewer (search, print); the download button saves the
 original file. Conversions are cached per file version, so a document
 converts once and reopens at once.
@@ -40,6 +51,8 @@ converts once and reopens at once.
 
 ## Commenting
 
+![Select a line of Markdown, press Comment, type, and the comment lands in the list as a draft](../../media/doc-review/comment-text.gif)
+
 - **Text:** select it and press **Comment**, right-click it, or press ⌘⌥M.
 - **Area:** on pages and slides, switch to **Area** and draw a box around a
   chart or picture; the comment carries an image of that region.
@@ -53,9 +66,12 @@ converts once and reopens at once.
   side by side, say) take comments too, and the agent learns which frame.
 - **Drawing:** on HTML pages and on pages and slides, switch to **Draw** and
   mark up the document the way you would on paper: the pen crosses out,
-  underlines, or circles, the arrow shows where something should move. Draw
+  underlines, or circles; the line draws a straight stroke from where you
+  press to where you let go; the arrow shows where something should move; the
+  box frames a block. Draw
   as many strokes as you need, then press **Comment** under them (the same
-  bar takes back the last stroke, ⌘Z does too, or clears the drawing). The
+  bar clears the drawing and, from the second stroke on, takes back the last
+  one; ⌘Z does too). The
   agent gets a picture of the drawing over the page as you saw it: on HTML
   that is the page in its current state (what you typed, opened, or
   scrolled), photographed by headless Chrome on the server; on pages, the
@@ -67,6 +83,8 @@ converts once and reopens at once.
   mode hold, then drag to draw; in a workbook tap a cell, or hold and drag
   over a range. A drag without the hold scrolls as usual.
 
+![In Draw mode, circle a figure on a PDF page and comment on the drawing](../../media/doc-review/comment-drawing.gif)
+
 The comments button in the toolbar hides the list beside the document for a
 full-width view; the choice is remembered across files, and a click on a
 comment's number on the page brings the list back.
@@ -77,8 +95,72 @@ agent runs `bb doc-review resolve` or `bb doc-review reply`; the tab moves each
 comment to *Done* or *Needs you* with the agent's note, live. The reviewed
 file is never modified by the plugin; comments live in its own database.
 
+## Threads
+
+Each comment is a conversation. The agent's notes stay in it, one under
+another, and **Reply** under the latest one answers back: confirm what it
+understood, correct it, or reopen a comment it closed. A reply waits as a
+draft with the comment (edit it with the pencil, drop it with ×) and goes
+out with the other drafts on **Send**. The agent gets the comment, the
+thread so far, and your new reply, and answers in the same thread, so the
+exchange runs as long as it needs to, in this chat or a new one.
+
+![Reply under the agent's question, and the answer waits as a draft with the comment](../../media/doc-review/reply.gif)
+
 The **Doc Review** page in the sidebar lists files with comments and their
 status, recent files, and a folder browser, and opens any file by path.
+
+## Sharing comments as a PDF
+
+The download button on a PDF, Word file, or presentation offers the
+**Original file** or a **PDF with comments**: type the name to sign them
+with and press **Download PDF**. In it:
+
+- every comment is a PDF annotation (a highlight on quoted text, a box on
+  an area, the strokes of a drawing, a note for the whole document) with the
+  comment as its text and your name as its author, so PDF viewers list them
+  as comments;
+- each mark carries a numbered badge, and closing pages list every comment
+  with its replies by number, for viewers that hide annotation text;
+- the comments ride along as an attachment that Doc Review reads.
+
+![Left: the download menu with PDF with comments and a name to sign with. Right: the exported page with a highlight, a drawing, a box and numbered badges](../../media/doc-review/catalog-export-pdf.png)
+
+When someone with Doc Review opens that PDF in bb, a bar over it offers to
+**Import** the comments: into the PDF, or into the file they were written on
+(the deck or document) when it sits next to the PDF. Imported comments are
+drafts under their author's name: change them, reply to them, add your own,
+send them to an agent, or download a PDF with comments again to send back.
+Importing that PDF on the first side adds the answers to the threads of the
+original comments; importing a file twice adds nothing. In the panel, a PDF
+that carries comments shows its pages without its own annotations and
+without the closing list, so the comments do not show twice; **Classic**
+shows the file as it is.
+
+## Live sites
+
+In the desktop app, a site opened in bb's browser (a stand, a staging server,
+a running app) is reviewed on the page itself. Press **Review** beside the
+address bar: a bar at the bottom of the page switches between **Text**
+(select and comment; the page stays clickable), **Element** (click a block,
+button, or picture), and **Draw** (pen and arrow, as on HTML files).
+Numbered pins mark the comments, **Comments** opens the list for this page
+with each thread and **Reply**, and **Send** hands every draft on the site to
+the chat that owns the tab. A drawing goes with a screenshot of the tab, the
+strokes on it; the controls step aside while the screenshot is taken and come
+back as soon as the desktop app has it.
+
+A site is one document: its comments live on, page by page, across reloads
+and the agent's deploys, and each page shows the ones left on it. The Doc
+Review page lists the site beside files, with every comment and thread. The
+agent gets the site, each comment's page, and the quote or the element's
+HTML, and is asked to change the code behind the page and ship it the way
+the project does.
+
+Only bb Desktop lets a plugin into its browser's pages: the web app and
+phones show no Review button. A link to another page of the site keeps the
+review on; after a full reload the controls come back within a few seconds.
+The controls switch off when the tab is hidden behind another panel tab.
 
 ## Install
 
@@ -120,6 +202,9 @@ Pages render with the fonts installed on the server, including `~/.fonts`.
 | LibreOffice executable | empty | Full path to `soffice` when it is not on `PATH` or in the usual install folders |
 | Chrome executable | empty | Full path to Chrome, Chromium, or Edge when it is not on `PATH` or in the usual install folders |
 
+The name you sign exported comments with is remembered from the download
+menu.
+
 ## For agents
 
 The bundled skill (`skills/doc-review`) tells the agent how to apply a batch
@@ -128,15 +213,25 @@ and report back. The command:
 ```sh
 bb doc-review list                          # comments sent to this thread, still waiting
 bb doc-review list --status all --all-threads
-bb doc-review show <id>
+bb doc-review show <id>                     # with its thread
 bb doc-review resolve <id...> --note "what changed"
 bb doc-review reply <id> --note "question or reason"
+bb doc-review export deck.pptx --as "Name"  # writes "deck (comments).pdf" next to it
+bb doc-review import "deck (comments).pdf" --into deck.pptx
 ```
 
 ## How it works
 
 - `src/files.ts` resolves the opened path (workspace, thread storage, host
   path, or a project checkout) to an absolute path and host.
+- `src/attachments.ts` serves the attachments tab (`ui/attachment-tab.tsx`,
+  opened by the `review-attachments` message action or from the panel's tab
+  list): it reads a thread's attached files from its message requests
+  (`localFile` inputs) or from one message (`threads.message`), and copies
+  the chosen one from the project's attachment store
+  (`projects.attachments.read`) into the thread's storage under `Doc Review/`,
+  never over another file, remembering the copy per attachment. The tab then
+  shows the copy with the same view as any stored file.
 - `src/viewer.ts` (from Document Viewer) converts Word and PowerPoint files
   with LibreOffice into a size- and age-bounded cache, copies files from other
   hosts, mints links for the classic view and downloads (bb's preview
@@ -176,11 +271,42 @@ bb doc-review reply <id> --note "question or reason"
   pipe with scripts disabled, lets files load only from the page's own
   folder, lays the strokes on top, and takes the screenshot. Pictures live
   next to the plugin's database and go to the agent as attachments.
-- `src/store.ts` keeps documents and comments in the plugin's SQLite database;
-  every change publishes a realtime signal that open tabs follow. The tab also
+- Live sites: the Review button (`ui/web-review.tsx`, a Browser toolbar
+  action) installs the controls (`src/web-ui.ts`) and the bridge into the
+  page's isolated world with `experimental_page.evaluate`. A Browser tab is
+  a native view above the bb window, so the controls are drawn in the page,
+  in a shadow root, rather than by the panel. The bridge talks to them
+  through `window.__docReviewHost` instead of `postMessage`, leaves the
+  page's frames alone, and sends no copy of the page; the controls ask the
+  button for everything else over `bb.postMessage`, and the button answers
+  through `__docReviewWeb.fromPlugin`. A drawing's picture is the tab's own
+  screenshot (`web.capture`: the desktop browser instances on connected
+  machines are asked for the tab, and the one that has it is remembered).
+  The server keeps the JPEG and hands the panel a token that
+  `comments.create` redeems, so the picture never travels back to the
+  panel. A site is a `web`
+  document keyed by its origin; each anchor carries the page URL, and pages
+  match by path, without the query or hash.
+- `src/store.ts` keeps documents, comments, and their threads (`replies`:
+  the agent's notes and the user's answers, a draft answer last) in the
+  plugin's SQLite database; every change publishes a realtime signal that
+  open tabs follow. The tab also
   polls the file's version, so the agent's edits show up without reopening it.
+- Exporting (`src/annotate.ts`, `src/exchange.ts`) loads the PDF the pages
+  are shown from with `pdf-lib`, maps each anchor from fractions of the page
+  as shown into the page's own coordinates through its rotation, and writes
+  annotations with their own appearance streams (the badge is part of each),
+  the list pages (in a system sans-serif font found with `fc-match`, for
+  Cyrillic and other scripts), and the comments as JSON
+  (`src/share.ts`) in an embedded file. Annotations are named
+  `doc-review-<id>`, so exporting a PDF that came from an export first
+  removes them, its list pages, and its attachment. A PDF that cannot be
+  edited (encrypted or damaged) is rebuilt from its page images first.
+  Opening a PDF looks for the attachment with `pdfdetach`; importing merges
+  by the ids every comment and reply carries.
 - Sending builds one message (file, then per comment: id, location, quote,
-  request) and sends it to the current thread, or spawns a thread in the same
+  request, and for a follow-up the thread and the new reply) and sends it to
+  the current thread, or spawns a thread in the same
   project and environment with the source thread's model.
 
 ## Known limits
@@ -194,6 +320,13 @@ bb doc-review reply <id> --note "question or reason"
 - In the classic view, comments are not shown; switch back with **Comment**.
   Phones have no usable built-in PDF viewer, so the button is hidden there.
 - A text selection that spans two pages keeps the part on the first page.
+- Comments go into exported PDFs from PDF, Word, and PowerPoint files only;
+  Markdown, HTML, workbooks, and live sites are not exported. An imported
+  comment edited on the other side comes back with its original text: only
+  new replies and new comments travel back.
+- Comments imported into a Word or PowerPoint file are placed by the other
+  side's rendering of it; a different LibreOffice or fonts can shift them
+  slightly.
 - Relative file links in Markdown open only when the file belongs to a thread
   (its workspace or thread storage); a link to another file opens that file
   at its top, without jumping to its `#section`.
@@ -204,12 +337,16 @@ bb doc-review reply <id> --note "question or reason"
   frame that loads another file or a site shows as is, without comments.
 - bb's preview of the folder lasts an hour; an HTML page left open longer may
   fail to load pictures it had not loaded yet until it is reopened.
+- Live sites need bb Desktop, and the browser APIs they use are experimental
+  in bb's plugin SDK. Frames inside a live page take no comments, and a
+  comment cannot be edited there (delete it and write it again, or edit it
+  on the Doc Review page).
 
 ## Development
 
 ```sh
 npm install
-npm test           # vitest: formats, conversions, caches, workbook readers, anchors
+npm test           # vitest: formats, conversions, caches, workbook readers, anchors, exports
 npm run typecheck
 npm run build
 npm run dev        # rebuild + reload on save

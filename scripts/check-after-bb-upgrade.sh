@@ -71,18 +71,31 @@ note ""
 
 # --- 1. якоря хоста в собранном коде приложения ------------------------------
 
-# Каталог бандлов приложения берём от точки входа из bb-app-runtime.json:
-# .../node_modules/.bin/bb-app -> .../node_modules/bb-app/app/dist/assets.
+# Каталог бандлов приложения берём от точки входа из bb-app-runtime.json.
+# Точка входа бывает двух видов:
+#   npm-установка:     .../node_modules/.bin/bb-app
+#   обновление из bb:  ~/.bb/app-versions/<версия>/node_modules/bb-app/dist/bb-app.js
+# В обоих случаях бандлы лежат в .../node_modules/bb-app/app/dist/assets.
 entry="$(sed -n 's/.*"entryPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$runtime" | head -n 1)"
 assets=""
 if [ -n "$entry" ]; then
-  candidate="$(dirname -- "$(dirname -- "$entry")")/bb-app/app/dist/assets"
-  [ -d "$candidate" ] && assets="$candidate"
+  up2="$(dirname -- "$(dirname -- "$entry")")"
+  for candidate in "$up2/bb-app/app/dist/assets" "$up2/app/dist/assets"; do
+    if [ -d "$candidate" ]; then
+      assets="$candidate"
+      break
+    fi
+  done
 fi
-if [ -z "$assets" ] && [ -d /home/coder/opt/bb/node_modules/bb-app/app/dist/assets ]; then
-  assets=/home/coder/opt/bb/node_modules/bb-app/app/dist/assets
+# Запасной путь — npm-установка в ~/opt/bb, но только той же версии, что
+# запущена: после обновления из bb там остаётся старый бандл, и проверка по
+# нему ничего не говорит о работающем приложении.
+fallback=/home/coder/opt/bb/node_modules/bb-app
+if [ -z "$assets" ] && [ -d "$fallback/app/dist/assets" ] \
+  && grep -qF "\"version\": \"$version\"" "$fallback/package.json" 2>/dev/null; then
+  assets="$fallback/app/dist/assets"
 fi
-[ -n "$assets" ] || die "не нашёл каталог бандлов приложения (assets)"
+[ -n "$assets" ] || die "не нашёл каталог бандлов запущенного bb $version (assets)"
 
 note "Якоря хоста в $assets"
 

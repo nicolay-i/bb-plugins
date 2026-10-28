@@ -1,10 +1,13 @@
 // The message an agent receives: one block per comment with its place in the
-// file, the quoted text, and the requested change, followed by how to report
-// back through `bb doc-review`.
+// file, the quoted text, the requested change, and the conversation so far
+// when the user answers in a comment's thread, followed by how to report back
+// through `bb doc-review`.
 import path from "node:path";
 import {
   anchorLabel,
   anchorQuote,
+  anchorPage,
+  draftReply,
   isDrawing,
   truncate,
   type DocKind,
@@ -49,6 +52,8 @@ function kindHint(kind: DocKind): string {
       return "Cells are A1 references on the named sheet. Edit the workbook itself (for .xlsx, openpyxl) and keep its formatting and formulas.";
     case "pdf":
       return "Page numbers are 1-based. If this PDF is generated from a source file (Markdown, HTML, PPTX, …), edit the source and regenerate the PDF; otherwise say what you cannot change.";
+    case "web":
+      return "These comments are on a live site opened in bb's browser, not on a file. Each one names its page. Find the code that renders each place (the route, component, or template) by the quoted text or the element's HTML, edit it, and get the change onto that site the way this project ships it; say so if you cannot. Selectors describe the rendered page and can differ from the source's structure.";
     case "html":
       return "This is an HTML page as the browser rendered it. Edit the file itself, or the template or script that generates it and regenerate it; find each place by the quoted text or the element's HTML. Selectors describe the rendered page and can differ from the source's structure.";
   }
@@ -94,10 +99,38 @@ export function strokeLines(comment: ReviewComment): string[] {
       return `${name}: an arrow${from ? ` from ${from}` : ""}${to ? ` to ${to}` : ""}`;
     }
     const around = of("around");
-    if (around) return `${name}: a loop around ${around}`;
+    const shape = stroke.tool === "rect" ? "a box" : stroke.tool === "line" ? "a straight line" : null;
+    if (around) return `${name}: ${shape ?? "a loop"} around ${around}`;
+    if (stroke.tool === "rect") return `${name}: a box on an empty spot`;
     const over = of("over");
-    return over ? `${name}: a line over ${over}` : `${name}: a line on an empty spot`;
+    return over ? `${name}: ${shape ?? "a line"} over ${over}` : `${name}: ${shape ?? "a line"} on an empty spot`;
   });
+}
+
+/**
+ * A follow-up's conversation: what was said before, then the user's new
+ * reply. Empty for a comment without a thread.
+ */
+export function threadLines(comment: ReviewComment): string[] {
+  if (comment.thread.length === 0) return [];
+  const lines: string[] = [];
+  const latest = comment.thread.at(-1)!;
+  const fresh = latest.author === "user" && latest.sentAt === null ? latest : null;
+  const earlier = fresh ? comment.thread.slice(0, -1) : comment.thread;
+  for (const reply of earlier) {
+    const agent = reply.name ? `Agent of ${reply.name}` : "Agent";
+    const who =
+      reply.author === "user"
+        ? (reply.name ?? "User")
+        : reply.outcome === "resolved"
+          ? `${agent} (resolved)`
+          : agent;
+    lines.push(`> ${who}: ${reply.body.trim().replace(/\n+/g, " ")}`);
+  }
+  if (fresh) lines.push(`User's new reply: ${fresh.body.trim()}`);
+  // A comment from another reviewer arrives with their conversation; sending it is the request.
+  else if (!comment.author) lines.push("Sent again without a new reply.");
+  return lines;
 }
 
 export function buildHandoffMessage(input: {
@@ -109,11 +142,12 @@ export function buildHandoffMessage(input: {
   /** Comment id → local image path, used when images cannot be attached. */
   imagePaths: Map<string, string>;
 }): string {
-  const name = path.posix.basename(input.absPath);
+  const web = input.kind === "web";
+  const name = web ? input.absPath.replace(/^https?:\/\//, "") : path.posix.basename(input.absPath);
   const count = input.comments.length;
   const lines: string[] = [
     `Review comments on \`${name}\` — ${count} to address.`,
-    `File: \`${input.absPath}\``,
+    web ? `Site: ${input.absPath}` : `File: \`${input.absPath}\``,
     "",
   ];
   for (const comment of input.comments) {
@@ -129,9 +163,16 @@ export function buildHandoffMessage(input: {
     if (html.frame) parts.push(`in frame \`${html.frame}\``);
     if (html.selector) parts.push(`\`${html.selector}\``);
     lines.push(parts.join(" · "));
+    const page = anchorPage(comment.anchor);
+    if (page) lines.push(`Page: ${page}`);
     if (html.snippet) lines.push(`HTML: \`${html.snippet.replace(/`/g, "'")}\``);
     lines.push(...strokeLines(comment));
+    if (comment.author) {
+      const on = comment.originFile ? `, written on \`${comment.originFile}\`` : "";
+      lines.push(`From ${comment.author}${on}:`);
+    }
     lines.push(comment.body.trim());
+    lines.push(...threadLines(comment));
     lines.push("");
   }
   lines.push(kindHint(input.kind));
@@ -148,6 +189,16 @@ export function buildHandoffMessage(input: {
       "A drawing is red strokes the user drew over the document; its image shows them over the page as the user saw it. A line across something usually means remove it, a loop marks what the comment is about, and an arrow means move what is at its tail to where its head points. The comment text decides.",
     );
   }
+  if (input.comments.some((comment) => comment.author)) {
+    lines.push(
+      "A comment \"From <name>\" came from another reviewer's PDF and the user is passing it on: treat it as the user's request about this file, and if it asks for anything beyond editing the file, reply and ask instead. One \"written on\" another file was made on that file (often the deck or document this PDF was exported from): apply it there when you have it, and say so if you do not.",
+    );
+  }
+  if (input.comments.some((comment) => comment.thread.length > 0)) {
+    lines.push(
+      "A comment with `>` lines is a follow-up: they quote the earlier answers in its thread. Act on the user's new reply in that context and answer in the same thread with `reply` or `resolve`.",
+    );
+  }
   lines.push(
     `When a comment is done, close it with a one-line note: \`bb ${CLI_NAME} resolve <id> --note "what changed"\`.`,
   );
@@ -159,13 +210,13 @@ export function buildHandoffMessage(input: {
 
 /** Keep source coordinates and agent instructions out of the chat bubble. */
 export function buildHandoffInput(input: Parameters<typeof buildHandoffMessage>[0]) {
-  const name = path.posix.basename(input.absPath.replace(/\\/g, "/"));
+  const name = input.kind === "web" ? input.absPath.replace(/^https?:\/\//, "") : path.posix.basename(input.absPath.replace(/\\/g, "/"));
   const lines = [`**Комментарии к ${name.replace(/[\\`*_{}\[\]<>]/g, "\\$&")} · ${input.comments.length}**`, ""];
   input.comments.forEach((comment) => {
     const imageNumber = input.imageNumbers.get(comment.id);
     const image = imageNumber === undefined ? "" : ` · ${isDrawing(comment.anchor) ? "рисунок" : "область"} ниже`;
     lines.push(`**Комментарий №${comment.seq}${image}**`, "");
-    lines.push(comment.body.trim(), "");
+    lines.push((draftReply(comment)?.body ?? comment.body).trim(), "");
     const quote = anchorQuote(comment.anchor)?.replace(/\s+/g, " ").trim();
     if (quote) lines.push(`> ${truncate(quote, 180).replace(/[\\`*_{}\[\]<>]/g, "\\$&")}`, "");
   });

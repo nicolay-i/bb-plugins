@@ -1,6 +1,6 @@
 ---
 name: doc-review
-description: Apply review comments that the user left on a Markdown, PDF, Word, PowerPoint, Excel, or HTML file in bb's Doc Review panel, and report each one back with `bb doc-review`. Use when a message starts with "Review comments on" or lists comment ids like c_ab12cd, or when the user asks to handle, fix, or answer their review comments.
+description: Apply review comments that the user left on a Markdown, PDF, Word, PowerPoint, Excel, or HTML file in bb's Doc Review panel, and report each one back with `bb doc-review`; export a file's comments into a PDF to send, or import comments from such a PDF. Use when a message starts with "Review comments on" or lists comment ids like c_ab12cd, when the user asks to handle, fix, or answer their review comments, or to send, export, or import comments as a PDF.
 ---
 
 # Doc Review comments
@@ -10,6 +10,16 @@ chat. The message lists each comment as `[<id>] <location> · <quote>` followed
 by the requested change. Area comments on pages come with an attached image of
 that region (or a path to it), and so do drawings. The panel shows every comment's status live, so
 report each one as you finish it.
+
+Every comment keeps a thread: your notes from `resolve` and `reply` go into
+it, and the user can answer back. An answer comes as a follow-up: the
+comment, then `>` lines quoting the thread so far, then `User's new reply:`.
+
+A comment headed `From <name>:` came from another reviewer's PDF that the
+user imported and is passing on: treat it as the user's request. `>` lines
+under it are that reviewer's conversation, named. When it says `written on
+<file>`, it was made on that file (the deck or document the PDF was exported
+from): apply it there.
 
 ## Procedure
 
@@ -47,13 +57,24 @@ report each one as you finish it.
      touches (`Stroke 2: an arrow from <button> «Delete» … to <header> …`):
      find them in the source the same way as element comments. Open the
      image before editing.
+   - Live sites: the message names a `Site:` and each comment a `Page:`
+     instead of a file. The user commented on a running site (a stand) in
+     bb's browser. Find the code in this project that renders that page (the
+     route, component, or template) by the quoted text or the element's HTML,
+     edit it, and get the change onto the site the way the project ships it
+     (its deploy script, a service restart, a rebuild). Resolve once the site
+     serves the change; if you cannot deploy, say what is left in a reply.
 3. Close each handled comment with a one-line note in the user's language:
    `bb doc-review resolve <id> --note "what changed"`. Several ids can share
    one note when one edit covers them.
 4. When a comment is ambiguous, conflicts with another, or cannot be applied,
    do not guess: `bb doc-review reply <id> --note "question or reason"`. The
-   panel shows the answer under the comment and asks the user to respond.
-5. Finish with a short summary in chat: what changed, and which comments are
+   panel shows the answer in the comment's thread and asks the user to respond.
+5. A follow-up continues the conversation: read the thread, act on the new
+   reply (it can confirm, correct, or reverse what you did), and answer in
+   the same thread with `resolve` or `reply`. Do not redo what the thread
+   says is done.
+6. Finish with a short summary in chat: what changed, and which comments are
    waiting for the user.
 
 ## Commands
@@ -61,9 +82,11 @@ report each one as you finish it.
 | Command | Effect |
 | --- | --- |
 | `bb doc-review list` | Comments sent to this thread that are still waiting. `--all-threads`, `--status all`, `--file <path>` widen it. |
-| `bb doc-review show <id>` | One comment in full, including its exact anchor. |
+| `bb doc-review show <id>` | One comment in full, including its exact anchor and thread. |
 | `bb doc-review resolve <id...> --note "…"` | Mark done with a note on what changed. |
-| `bb doc-review reply <id> --note "…"` | Answer without resolving. |
+| `bb doc-review reply <id> --note "…"` | Answer without resolving; the user can answer back. |
+| `bb doc-review export <file> [--as "Name"] [--out <pdf>]` | A PDF of a PDF, Word, or PowerPoint file with its comments as annotations, numbered, listed at the end, and attached for Doc Review; written next to the file as `<name> (comments).pdf` by default. |
+| `bb doc-review import <pdf> [--into <file>]` | Brings in the comments such a PDF carries, into the PDF or the file they were written on; new ones wait as drafts, known ones only gain new replies. |
 
 Add `--json` when the output drives code.
 

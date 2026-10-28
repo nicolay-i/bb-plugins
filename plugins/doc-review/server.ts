@@ -12,6 +12,7 @@
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { LeaseCache } from "./src/lease-cache.js";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -19,6 +20,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isSupportedPath } from "./lib/formats.js";
 import { rpcContract, type Capture, type RecentDocument } from "./src/contract.js";
 import { reviewCli } from "./src/cli.js";
+import { createAttachments } from "./src/attachments.js";
+import { createExchange } from "./src/exchange.js";
 import { DocFiles } from "./src/files.js";
 import { BRIDGE_SCRIPT, HTML_SANDBOX, injectIntoHtml } from "./src/html-bridge.js";
 import { buildHandoffInput, buildHandoffMessage } from "./src/message.js";
@@ -27,10 +30,12 @@ import { findChrome, PageCamera } from "./src/snapshot.js";
 import { MIGRATIONS, ReviewStore, type Db, type DocRow } from "./src/store.js";
 import {
   docKindFor,
+  draftReply,
   HTML_EXTENSIONS,
   isDrawing,
   isPaged,
   MARKDOWN_EXTENSIONS,
+  sharedWithOthers,
   type ReviewComment,
   type ReviewDoc,
 } from "./src/types.js";
@@ -52,11 +57,17 @@ const HTML_ROUTE = "/html";
 const DRAWING_ROUTE = "/drawing";
 const gzipAsync = promisify(gzip);
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
+/** Screenshots of live pages wait this long for their drawing comment. */
+const SHOT_KEEP_MS = 10 * 60 * 1000;
+const SHOTS_MAX = 8;
 /** The largest HTML page served into the review frame. */
 const HTML_MAX_BYTES = 20 * 1024 * 1024;
 const NO_PROJECT =
   "This file is not in a project, so a new chat cannot be started from here.";
 const RECENTS_KEY = "recent-documents";
+/** The name exported comments are signed with, as last used. */
+const SIGNER_KEY = "export-signer";
 const RECENTS_LIMIT = 12;
 
 /** Thrown where pages are needed but LibreOffice cannot make them. */
@@ -68,6 +79,34 @@ class NeedsLibreOfficeError extends Error {
         : "LibreOffice is needed to show this file.",
     );
   }
+}
+
+/** Comments on a live site are not tied to a version of anything. */
+const WEB_VERSION = "live";
+
+/** Pictures are PNG, except screenshots of live pages, which stay the browser's JPEG. */
+function imageType(bytes: Buffer): { ext: "png" | "jpg"; mime: string } | null {
+  if (bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return { ext: "png", mime: "image/png" };
+  if (bytes.subarray(0, 3).equals(JPEG_SIGNATURE)) return { ext: "jpg", mime: "image/jpeg" };
+  return null;
+}
+
+/** The origin a page belongs to: a site is one document. */
+function siteOf(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Not a web address.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Doc Review comments on http and https pages.");
+  }
+  return parsed.origin;
+}
+
+function docName(doc: DocRow): string {
+  return doc.kind === "web" ? doc.absPath.replace(/^https?:\/\//, "") : path.posix.basename(doc.absPath);
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -108,11 +147,29 @@ export default async function plugin(bb: BbPluginApi) {
     path.join(dataDir, "shots"),
   );
   const drawingsDir = path.join(dataDir, "drawings");
-  const drawingFile = (id: string) => path.join(drawingsDir, `${id}.png`);
+  const drawingFiles = (id: string) => [path.join(drawingsDir, `${id}.png`), path.join(drawingsDir, `${id}.jpg`)];
+  const drawingFile = (id: string) => drawingFiles(id).find((file) => existsSync(file)) ?? null;
+
+  // Screenshots of live pages, kept here from `web.capture` until the drawing
+  // comment they were taken for is saved: the panel only holds a token.
+  const shots = new Map<string, { bytes: Buffer; at: number }>();
+  function keepShot(bytes: Buffer): string {
+    const now = Date.now();
+    for (const [token, shot] of shots) if (now - shot.at > SHOT_KEEP_MS) shots.delete(token);
+    for (const token of shots.keys()) {
+      if (shots.size < SHOTS_MAX) break;
+      shots.delete(token);
+    }
+    const token = randomUUID();
+    shots.set(token, { bytes, at: now });
+    return token;
+  }
+  /** Which desktop app holds a Browser tab, remembered so the next screenshot skips the search. */
+  const tabPlaces = new Map<string, { hostId: string; instanceId: string; generation: string }>();
 
   /** A comment as the panel gets it: drawings with a picture carry its URL. */
   function present(comment: ReviewComment): ReviewComment {
-    if (!isDrawing(comment.anchor) || !existsSync(drawingFile(comment.id))) return comment;
+    if (!isDrawing(comment.anchor) || !drawingFile(comment.id)) return comment;
     return { ...comment, imageUrl: `/api/v1/plugins/${bb.pluginId}/http${DRAWING_ROUTE}?c=${comment.id}` };
   }
 
@@ -131,6 +188,9 @@ export default async function plugin(bb: BbPluginApi) {
         html: `<html><body style="margin:0"><img style="display:block" src="data:image/png;base64,${data.toString("base64")}"></body></html>`,
         viewport: { w, h }, scroll: { x: 0, y: 0 }, strokes: [],
       });
+    } else if (capture.kind === "shot") {
+      bytes = shots.get(capture.token)?.bytes ?? null;
+      shots.delete(capture.token);
     } else if (anchor.kind === "html-drawing" && doc.kind === "html") {
       const shot = {
         label,
@@ -143,8 +203,10 @@ export default async function plugin(bb: BbPluginApi) {
       bytes = await photograph(shot);
     }
     if (!bytes) throw new Error("Could not capture the drawing; Chrome must be available on the document's host.");
+    const type = imageType(bytes);
+    if (!type) throw new Error("Unsupported drawing image format.");
     await mkdir(drawingsDir, { recursive: true });
-    await writeFile(drawingFile(comment.id), bytes);
+    await writeFile(path.join(drawingsDir, `${comment.id}.${type.ext}`), bytes);
   }
   const viewer = createViewer(bb, {
     dataDir,
@@ -167,6 +229,8 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function currentVersion(doc: DocRow): Promise<string> {
+    // A live site has no file to version; its pages are whatever the server sends.
+    if (doc.kind === "web") return WEB_VERSION;
     const version = await files.version(doc);
     if (version === null) throw new Error(`The file is gone: ${doc.absPath}`);
     return version;
@@ -176,7 +240,7 @@ export default async function plugin(bb: BbPluginApi) {
     return {
       id: doc.id,
       kind: doc.kind,
-      name: path.posix.basename(doc.absPath),
+      name: docName(doc),
       absPath: doc.absPath,
       hostId: doc.hostId,
       version,
@@ -192,6 +256,21 @@ export default async function plugin(bb: BbPluginApi) {
     const converted = await viewer.convertedPdf(file, path.posix.basename(doc.absPath), doc.kind);
     if (typeof converted !== "string") throw new NeedsLibreOfficeError(converted);
     return converted;
+  }
+
+  const exchange = createExchange({
+    store,
+    files,
+    renderer,
+    dataDir,
+    pdfFor,
+    currentVersion,
+    log: (message) => bb.log.warn(message),
+  });
+  const attachments = createAttachments({ bb, files });
+
+  async function readSigner(): Promise<string | null> {
+    return (await bb.storage.kv.get<string>(SIGNER_KEY)) || null;
   }
 
   async function readRecents(): Promise<RecentDocument[]> {
@@ -235,7 +314,9 @@ export default async function plugin(bb: BbPluginApi) {
       const size = (await renderer.pageSizes(doc.id, version, pdf))[n - 1];
       if (!size) return context.text("Not found", 404);
       const width = renderWidth(size, Number.isFinite(requested) ? requested : null);
-      const image = await renderer.pageImage(doc.id, version, pdf, n, width);
+      // A PDF exported with comments shows them as Doc Review's own, not twice.
+      const clean = (await exchange.sharedIn(doc)) !== null;
+      const image = await renderer.pageImage(doc.id, version, pdf, n, width, clean);
       const bytes = await readFile(image);
       return new Response(new Uint8Array(bytes), {
         headers: {
@@ -298,10 +379,12 @@ export default async function plugin(bb: BbPluginApi) {
   bb.http.route("GET", DRAWING_ROUTE, async (context) => {
     const id = context.req.query("c") ?? "";
     if (!/^c_[a-z0-9]+$/.test(id)) return context.text("Not found", 404);
-    const bytes = await readFile(drawingFile(id)).catch(() => null);
-    if (!bytes) return context.text("Not found", 404);
+    const file = drawingFile(id);
+    const bytes = file ? await readFile(file).catch(() => null) : null;
+    const type = bytes ? imageType(bytes) : null;
+    if (!bytes || !type) return context.text("Not found", 404);
     return new Response(new Uint8Array(bytes), {
-      headers: { "content-type": "image/png", "cache-control": "private, max-age=86400, immutable" },
+      headers: { "content-type": type.mime, "cache-control": "private, max-age=86400, immutable" },
     });
   });
 
@@ -330,7 +413,8 @@ export default async function plugin(bb: BbPluginApi) {
     }
     for (const comment of comments) {
       if (!isDrawing(comment.anchor)) continue;
-      const bytes = await readFile(drawingFile(comment.id)).catch(() => null);
+      const file = drawingFile(comment.id);
+      const bytes = file ? await readFile(file).catch(() => null) : null;
       if (!bytes) throw new Error("This drawing has no captured image. Recreate the drawing before sending it.");
       images.set(comment.id, bytes);
     }
@@ -344,7 +428,7 @@ export default async function plugin(bb: BbPluginApi) {
     await mkdir(dir, { recursive: true });
     const paths = new Map<string, string>();
     for (const [id, bytes] of images) {
-      const file = path.join(dir, `${id}.png`);
+      const file = path.join(dir, `${id}.${imageType(bytes)?.ext ?? "png"}`);
       await writeFile(file, bytes);
       paths.set(id, file);
     }
@@ -383,7 +467,7 @@ export default async function plugin(bb: BbPluginApi) {
         docs: store.listDocsWithCounts(100).map((doc) => ({
           id: doc.id,
           kind: doc.kind,
-          name: path.posix.basename(doc.absPath),
+          name: docName(doc),
           absPath: doc.absPath,
           hostId: doc.hostId,
           counts: doc.counts,
@@ -393,7 +477,56 @@ export default async function plugin(bb: BbPluginApi) {
     },
 
     async "doc.version"({ docId }) {
-      return { version: await files.version(requireDoc(docId)) };
+      const doc = requireDoc(docId);
+      return { version: doc.kind === "web" ? WEB_VERSION : await files.version(doc) };
+    },
+
+    async "web.capture"({ threadId, tabId }) {
+      // The toolbar knows its thread and tab; the desktop app holding the
+      // tab is found by asking each connected machine's browser instances.
+      const browsers = bb.sdk.experimental_desktopBrowsers;
+      const key = `${threadId}\n${tabId}`;
+      const take = async (place: { hostId: string; instanceId: string; generation: string }) => {
+        const shot = await browsers.captureTab({ ...place, threadId, tabId });
+        return { token: keepShot(Buffer.from(shot.base64, "base64")) };
+      };
+      const known = tabPlaces.get(key);
+      if (known) {
+        try {
+          return await take(known);
+        } catch {
+          tabPlaces.delete(key);
+        }
+      }
+      const hosts = (await bb.sdk.hosts.list()).filter((host) => host.status === "connected");
+      for (const host of hosts) {
+        const listed = await browsers.listInstances({ hostId: host.id }).catch(() => null);
+        for (const instance of listed?.instances ?? []) {
+          const place = { hostId: host.id, instanceId: instance.instanceId, generation: instance.generation };
+          try {
+            const result = await take(place);
+            if (tabPlaces.size >= 200) tabPlaces.clear();
+            tabPlaces.set(key, place);
+            return result;
+          } catch {
+            // Another instance holds the tab.
+          }
+        }
+      }
+      throw new Error("No desktop browser has this tab.");
+    },
+
+    async "attachments.list"({ threadId, seq }) {
+      return { files: await attachments.list(threadId, seq) };
+    },
+
+    async "attachments.open"({ threadId, path: stored, name }) {
+      return { path: await attachments.copy(threadId, { path: stored, name }) };
+    },
+
+    async "web.open"({ url }) {
+      const doc = store.upsertDoc(null, siteOf(url), "web");
+      return { doc: toDto(doc, WEB_VERSION) };
     },
 
     async "doc.markdown"({ docId }) {
@@ -427,7 +560,9 @@ export default async function plugin(bb: BbPluginApi) {
         }
         throw error;
       }
-      const sizes = await renderer.pageSizes(doc.id, version, pdf);
+      // A PDF exported with comments: its closing list pages repeat what the panel shows.
+      const shared = await exchange.sharedIn(doc);
+      const sizes = (await renderer.pageSizes(doc.id, version, pdf)).slice(0, shared?.file.pages);
       const base = `/api/v1/plugins/${bb.pluginId}/http${PAGE_ROUTE}`;
       const v = encodeURIComponent(version);
       return {
@@ -546,10 +681,30 @@ export default async function plugin(bb: BbPluginApi) {
       return present(comment);
     },
 
+    async "comments.reply"({ id, body }) {
+      const existing = store.getComment(id);
+      if (!existing) throw new Error("This comment was deleted.");
+      // Another reviewer's comment takes a reply before it is sent: the answer goes back with the PDF.
+      if (existing.status === "draft" && !draftReply(existing) && !sharedWithOthers(existing)) {
+        throw new Error("This comment is not sent yet; edit it instead.");
+      }
+      const comment = store.saveReply(id, body);
+      publish([existing.doc.id]);
+      return present(comment);
+    },
+
+    async "comments.discardReply"({ id }) {
+      const existing = store.getComment(id);
+      if (!existing) throw new Error("This comment was deleted.");
+      const comment = store.discardReply(id);
+      publish([existing.doc.id]);
+      return present(comment);
+    },
+
     async "comments.delete"({ id }) {
       const existing = store.getComment(id);
       const deleted = store.deleteComment(id);
-      if (deleted) await rm(drawingFile(id), { force: true });
+      if (deleted) await Promise.all(drawingFiles(id).map((file) => rm(file, { force: true })));
       if (existing) publish([existing.doc.id]);
       return { deleted };
     },
@@ -591,12 +746,13 @@ export default async function plugin(bb: BbPluginApi) {
       for (const comment of comments) {
         const bytes = crops.get(comment.id);
         if (!bytes) continue;
+        const type = imageType(bytes) ?? { ext: "png", mime: "image/png" };
         try {
           const uploaded = await bb.sdk.projects.attachments.upload({
             projectId,
             clientFile: new Uint8Array(bytes),
-            filename: `comment-${comment.seq}-${comment.id}.png`,
-            mimeType: "image/png",
+            filename: `comment-${comment.seq}-${comment.id}.${type.ext}`,
+            mimeType: type.mime,
           });
           imageInputs.push({ type: "localImage", path: uploaded.path });
           imageNumbers.set(comment.id, imageInputs.length);
@@ -675,6 +831,38 @@ export default async function plugin(bb: BbPluginApi) {
       return { prompt, ids: comments.map((comment) => comment.id) };
     },
 
+    async "export.signer"() {
+      return { signer: await readSigner() };
+    },
+
+    async "doc.export"({ docId, signer }) {
+      const doc = requireDoc(docId);
+      const name = signer?.trim() || null;
+      await bb.storage.kv.set(SIGNER_KEY, name ?? "");
+      const exported = await exchange.exportPdf(doc, name);
+      const file = await exchange.saveExport(exported.bytes);
+      const link = await viewer.mintOwnFile({ path: file, name: exported.name, contentType: "application/pdf" });
+      return { link, name: exported.name, count: exported.count };
+    },
+
+    async "doc.shared"({ docId }) {
+      return { shared: await exchange.summary(requireDoc(docId)) };
+    },
+
+    async "comments.import"({ docId, into }) {
+      const source = requireDoc(docId);
+      let target: DocRow = source;
+      if (into === "original") {
+        const shared = await exchange.sharedIn(source);
+        const original = shared ? await exchange.originalOf(source, shared) : null;
+        if (!original) throw new Error("The file these comments were written on is not next to this PDF.");
+        target = original;
+      }
+      const result = await exchange.importInto(source, target);
+      publish([source.id, target.id]);
+      return { docId: target.id, name: path.posix.basename(target.absPath), ...result };
+    },
+
     async "comments.markSent"({ ids, threadId }) {
       const docIds = new Set<string>();
       for (const id of ids) {
@@ -687,5 +875,20 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.cli.register(reviewCli({ bb, store, onChanged: publish }));
+  bb.cli.register(
+    reviewCli({
+      bb,
+      store,
+      onChanged: publish,
+      exchange,
+      openDoc: async (absPath, hostId) => {
+        const kind = docKindFor(absPath);
+        if (!kind) throw new Error("Doc Review opens Markdown, PDF, Word, PowerPoint, Excel, and HTML files.");
+        const doc = store.upsertDoc(hostId, absPath, kind);
+        if ((await files.version(doc)) === null) throw new Error(`No such file: ${absPath}`);
+        return doc;
+      },
+      readSigner,
+    }),
+  );
 }

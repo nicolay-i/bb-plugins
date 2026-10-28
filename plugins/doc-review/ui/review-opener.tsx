@@ -31,7 +31,9 @@ import type {
 } from "../src/contract";
 import {
   anchorLabel,
+  DRAW_TOOLS,
   isDrawing,
+  isPageAnchor,
   isPaged,
   type Anchor,
   type DrawTool,
@@ -47,6 +49,7 @@ import { HtmlDoc } from "./html-doc";
 import { MarkdownDoc, type MarkdownDocument, type Point } from "./markdown-doc";
 import { documentRoot } from "./md-blocks";
 import { PagesDoc, type PageMode } from "./pages-doc";
+import { DownloadMenu, SharedBanner, useShared } from "./share-ui";
 import { SheetDoc } from "./sheet-doc";
 import { errorText, useComments, useReviewDoc, useReviewRpc } from "./use-review";
 
@@ -58,6 +61,16 @@ const COMPACT_MAX_PX = 560;
 const SHEET_SHARE = 0.55;
 /** Whether the comment list beside the document is tucked away, kept across files. */
 const LIST_HIDDEN_KEY = "doc-review:list-hidden";
+
+/** The Doc Review page's path (reviews-page.tsx), where a document opens on its own. */
+const PAGE_PATH = "doc-review";
+
+const TOOL_BUTTONS: Record<DrawTool, { label: string; title: string; icon: string }> = {
+  pen: { label: "Pen", title: "Pen: cross out, underline, circle", icon: "Edit" },
+  line: { label: "Line", title: "Line: a straight line, to underline or cross out", icon: "Line" },
+  arrow: { label: "Arrow", title: "Arrow: show where to move something", icon: "ArrowUpRight" },
+  rect: { label: "Box", title: "Box: frame a block", icon: "Square" },
+};
 
 function readListHidden(): boolean {
   try {
@@ -100,7 +113,8 @@ type Content =
   | { kind: "pages"; version: string; pages: PageInfo[] }
   | { kind: "needs-libreoffice"; missing: NeedsLibreOfficeResult }
   | { kind: "sheet"; version: string; workbook: WorkbookSummary; sheet: SheetData }
-  | { kind: "html"; version: string; url: string };
+  | { kind: "html"; version: string; url: string }
+  | { kind: "web"; version: string };
 
 /** Loads the document body for the current version; keeps the last one while reloading. */
 function useDocContent(doc: ReviewDoc) {
@@ -120,6 +134,8 @@ function useDocContent(doc: ReviewDoc) {
         if (!doc.htmlUrl) throw new Error("Missing HTML document URL.");
         return { kind: "html", version: doc.version, url: doc.htmlUrl };
       }
+      // A live site is reviewed in bb's browser; here are only its comments.
+      if (doc.kind === "web") return { kind: "web", version: doc.version };
       if (doc.kind === "spreadsheet") {
         const opened = await rpc.call("sheet.open", { docId: doc.id, locale: navigator.language || "en-US" });
         return { kind: "sheet", version: opened.version, workbook: opened.workbook, sheet: opened.sheet };
@@ -159,6 +175,8 @@ function useDocLinks(doc: ReviewDoc) {
   const rpc = useReviewRpc();
   const [links, setLinks] = useState<{ document: ViewerLink | null; download: ViewerLink } | null>(null);
   useEffect(() => {
+    // A live site has no file to download.
+    if (doc.kind === "web") return;
     let alive = true;
     const load = () =>
       rpc.call("doc.links", { docId: doc.id }).then(
@@ -171,7 +189,7 @@ function useDocLinks(doc: ReviewDoc) {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [rpc, doc.id, doc.version]);
+  }, [rpc, doc.id, doc.kind, doc.version]);
   return links;
 }
 
@@ -365,6 +383,9 @@ export function Workspace({
   const [listHidden, setListHidden] = useState(readListHidden);
 
   const list = comments ?? [];
+  const { shared, reload: reloadShared } = useShared(doc, comments);
+  // What a PDF with comments would carry: comments on pages and on the whole document.
+  const shareable = paged ? list.filter((comment) => comment.anchor.kind === "doc" || isPageAnchor(comment.anchor)).length : null;
   const coveredBottom = !wide && listOpen ? SHEET_SHARE : 0;
   const drafts = list.filter((comment) => comment.status === "draft");
   const needsYou = list.filter((comment) => comment.status === "replied").length;
@@ -455,6 +476,20 @@ export function Workspace({
     },
     onReopen(comment) {
       rpc.call("comments.reopen", { id: comment.id }).then(refetch, (cause: unknown) =>
+        toast.error(errorText(cause)),
+      );
+    },
+    async onReply(comment, body) {
+      try {
+        await rpc.call("comments.reply", { id: comment.id, body });
+        refetch();
+      } catch (cause) {
+        toast.error(errorText(cause));
+        throw cause;
+      }
+    },
+    onDiscardReply(comment) {
+      rpc.call("comments.discardReply", { id: comment.id }).then(refetch, (cause: unknown) =>
         toast.error(errorText(cause)),
       );
     },
@@ -596,6 +631,17 @@ export function Workspace({
       onRequestComment={requestComment}
       onSelectComment={selectFromDoc}
     />
+  ) : content.kind === "web" ? (
+    <Centered>
+      <Icon name="Globe" className="size-6" />
+      <p className="max-w-sm">
+        Comments on {doc.name}, a live site. To see them on its pages, open it in bb&apos;s browser in the desktop
+        app and press <span className="font-medium text-foreground">Review</span> beside the address bar.
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={() => navigate.openUrl(doc.absPath)}>
+        Open {doc.name}
+      </Button>
+    </Centered>
   ) : content.kind === "html" ? (
     <HtmlDoc
       onOpenFile={(href) => {
@@ -710,20 +756,20 @@ export function Workspace({
         ) : null}
         {hasModes && mode === "draw" ? (
           <div className="flex rounded-md border border-border p-0.5" role="group" aria-label="Drawing tool">
-            {(["pen", "arrow"] as const).map((value) => (
+            {DRAW_TOOLS.map((value) => (
               <button
                 key={value}
                 type="button"
                 aria-pressed={tool === value}
-                aria-label={value === "pen" ? "Pen" : "Arrow"}
-                title={value === "pen" ? "Pen: cross out, underline, circle" : "Arrow: show where to move something"}
+                aria-label={TOOL_BUTTONS[value].label}
+                title={TOOL_BUTTONS[value].title}
                 onClick={() => setTool(value)}
                 className={cn(
                   "inline-flex size-7 items-center justify-center rounded-[5px]",
                   tool === value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <Icon name={value === "pen" ? "Edit" : "ArrowUpRight"} className="size-3.5" />
+                <Icon name={TOOL_BUTTONS[value].icon} className="size-3.5" />
               </button>
             ))}
           </div>
@@ -762,13 +808,7 @@ export function Workspace({
             <Icon name="Eye" className="size-4" />
           </Button>
         ) : null}
-        {links ? (
-          <Button asChild type="button" variant="ghost" size="icon" className="size-8 text-muted-foreground">
-            <a href={links.download.url} download={doc.name} aria-label={`Download ${doc.name}`}>
-              <Icon name="Download" className="size-4" />
-            </a>
-          </Button>
-        ) : null}
+        {links ? <DownloadMenu doc={doc} original={links.download} shareable={shareable} /> : null}
         <span className="inline-flex" title={listShown ? "Hide comments" : "Show comments"}>
           <Button
             type="button"
@@ -796,6 +836,17 @@ export function Workspace({
           onSend={(target) => void send(target)}
         />
       </div>
+      {shared ? (
+        <SharedBanner
+          doc={doc}
+          shared={shared}
+          onImported={() => {
+            refetch();
+            reloadShared();
+          }}
+          onOpen={(docId) => navigate.toPluginPanel(PAGE_PATH, { subPath: `doc/${docId}` })}
+        />
+      ) : null}
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1">
           <div

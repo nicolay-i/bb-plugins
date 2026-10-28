@@ -12,9 +12,17 @@
 // maps their rectangles into its own viewport, so the panel talks to one
 // bridge however deep the frames go.
 //
+// In bb's own browser (a live site in a Browser tab) the bridge runs in an
+// isolated world of the top page instead: the injector sets
+// `window.__docReviewHost` first, and the bridge sends through `host.send`
+// and takes the panel's messages on `host.receive`. It leaves the page's
+// frames alone there and sends no copy of the page: the tab's own screenshot
+// is the drawing's picture.
+//
 // The bridge is plain ES2019 kept as a string, so it runs in any page as is.
 
 import { DRAW_STEP, DRAWING_JS } from "./drawing.js";
+import { DRAW_TOOLS } from "./types.js";
 
 export { HTML_SANDBOX } from "./types.js";
 
@@ -22,13 +30,15 @@ const MARK = "data-doc-review-bridge";
 
 export const BRIDGE_SCRIPT = String.raw`(function () {
   "use strict";
-  if (window.__docReviewBridge || window.parent === window) return;
+  if (window.__docReviewBridge) return;
+  var host = window.__docReviewHost || null;
+  if (!host && window.parent === window) return;
   window.__docReviewBridge = true;
   var ACCENT = "79,107,237";
   var MARK = "data-doc-review-bridge";
   // A comment inside a frame names the frame by its CSS path, outermost first.
   var FRAME_JOIN = " >>> ";
-  var parentWindow = window.parent;
+  var parentWindow = host ? { postMessage: function (message) { host.send(message); } } : window.parent;
   var own = document.currentScript;
   // The bridge's own text, for the pages this page shows in srcdoc frames.
   var SOURCE = own && own.hasAttribute(MARK) ? own.textContent || "" : "";
@@ -61,6 +71,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
   var drawHold = null;
   var sketchShown = false;
   var DRAW_STEP = ${DRAW_STEP};
+  var DRAW_TOOLS = ${JSON.stringify(DRAW_TOOLS)};
   ${DRAWING_JS}
 
   function sendTo(target, message) {
@@ -552,7 +563,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
   function extendStroke(event) {
     var at = pagePoint(event);
     var p = stroke.points;
-    if (stroke.tool === "arrow") {
+    if (drawingShape(stroke.tool)) {
       stroke.points = [p[0], p[1], at[0], at[1]];
     } else {
       var n = p.length;
@@ -566,9 +577,8 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
     stroke = null;
     if (!done) return;
     var p = done.points;
-    // An arrow needs a direction; a click in arrow mode draws nothing.
-    var shortArrow = done.tool === "arrow" && (p.length < 4 || Math.abs(p[2] - p[0]) + Math.abs(p[3] - p[1]) < 8);
-    if (!shortArrow && sketch.length < 60) {
+    // A click with a shape tool draws nothing.
+    if (drawingKept(done, 1, 1) && sketch.length < 60) {
       if (p.length === 2) p.push(p[0], p[1]);
       sketch.push(done);
     }
@@ -764,6 +774,11 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       });
     })).then(function () { return results; });
   }
+  function lineSteps(x0, y0, x1, y1, count) {
+    var out = [];
+    for (var i = 0; i <= count; i += 1) out.push(x0 + ((x1 - x0) * i) / count, y0 + ((y1 - y0) * i) / count);
+    return out;
+  }
   function samplesOf(points, count) {
     var n = points.length / 2;
     var out = [];
@@ -797,11 +812,14 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       var w = b.x1 - b.x0;
       var h = b.y1 - b.y0;
       var gap = Math.abs(p[n - 2] - p[0]) + Math.abs(p[n - 1] - p[1]);
-      if (n >= 16 && w >= 16 && h >= 16 && gap <= Math.max(24, 0.35 * Math.max(w, h))) {
+      var box = strokes[s].tool === "rect";
+      if (box || (n >= 16 && w >= 16 && h >= 16 && gap <= Math.max(24, 0.35 * Math.max(w, h)))) {
         queries.push({ x: (b.x0 + b.x1) / 2 - window.scrollX, y: (b.y0 + b.y1) / 2 - window.scrollY, loop: { w: w * 1.2, h: h * 1.2 } });
         plans.push({ kind: "loop", first: first });
         continue;
       }
+      // A straight line is sampled along its length, like a pen stroke.
+      if (strokes[s].tool === "line") p = lineSteps(p[0], p[1], p[n - 2], p[n - 1], 24);
       var samples = samplesOf(p, 24);
       for (var i = 0; i < samples.length; i += 1) queries.push(samples[i]);
       plans.push({ kind: "line", first: first, count: samples.length });
@@ -927,7 +945,8 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
     var viewport = { w: window.innerWidth, h: window.innerHeight };
     var scroll = { x: window.scrollX, y: window.scrollY };
     var fail = function () { return null; };
-    Promise.all([marksFor(strokes).catch(function () { return []; }), serializePage().catch(fail)]).then(function (done) {
+    var copy = host ? Promise.resolve(null) : serializePage().catch(fail);
+    Promise.all([marksFor(strokes).catch(function () { return []; }), copy]).then(function (done) {
       post({
         type: "drawing",
         anchor: { kind: "html-drawing", strokes: strokes, viewport: viewport, marks: done[0] },
@@ -1116,7 +1135,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       var next = data.mode === "element" || data.mode === "draw" || data.mode === "idle" ? data.mode : "text";
       if (next !== "draw" && mode === "draw") clearSketch();
       mode = next;
-      if (data.tool === "pen" || data.tool === "arrow") tool = data.tool;
+      if (DRAW_TOOLS.indexOf(data.tool) >= 0) tool = data.tool;
       document.documentElement.setAttribute("data-doc-review-mode", mode);
       applyDrawMode();
       if (mode !== "element") showHover(null);
@@ -1154,6 +1173,7 @@ export const BRIDGE_SCRIPT = String.raw`(function () {
       toFrames("clear-selection");
     }
   }
+  if (host) host.receive = function (data) { if (data && data.docReview === 1) fromPanel(data); };
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.docReview !== 1) return;

@@ -8,6 +8,8 @@ Everything the panel touches lives under one hard root — the home directory of
 the user running bb — and
 every path is re-resolved and clamped on the server before a single byte moves.
 
+![Folders open in place; Space shows a Markdown file rendered and a source file highlighted, in a panel beside the list](../../media/file-manager/browse.gif)
+
 ## What it does
 
 - **Browse** — one directory at a time, with name / size / modified / kind
@@ -87,6 +89,8 @@ The panel appears in the bb sidebar as **File Manager** and is routed at
 `/plugins/file-manager/files/*`. While uploads are running, the sidebar row
 shows how many are in flight. The same file manager also opens as a tab in the
 right-hand panel, next to a thread — see below.
+
+<img src="../../media/file-manager/context-menu.png" width="640" alt="The row menu: open, download, add to chat, cut, copy, move, rename, copy path, properties, delete">
 
 ## Open it beside a thread
 
@@ -182,6 +186,8 @@ for it.
 A `.zip` you were sent, the `.tar.gz` an agent just built, a `.rar` from a
 colleague — you can see what is in it before deciding whether to extract it,
 and without extracting anything.
+
+![Space on a zip and on a tar.gz shows the archive as a folder tree with sizes, dates and a summary line](../../media/file-manager/archive.gif)
 
 | Where | How |
 | --- | --- |
@@ -316,6 +322,8 @@ panel remount and a bb restart. It is stored client-side and capped at 200 open
 folders. **Collapse all folders** resets it.
 
 ## Gallery
+
+![The list turns into a grid of thumbnails; Space opens the picture beside it](../../media/file-manager/gallery.gif)
 
 The button right of the filter swaps the list for a grid of thumbnails. Images
 — `png`, `jpg`, `jpeg`, `gif`, `webp`, `avif`, `bmp`, `svg` — are shown as

@@ -1,5 +1,6 @@
 // The comment list: drafts to send, comments waiting on an agent, answers
-// that need the user, and resolved ones.
+// that need the user, and resolved ones. Each comment keeps its thread with
+// the agent, and the user answers in it.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -7,7 +8,11 @@ import { cn } from "@/lib/utils";
 import {
   anchorLabel,
   anchorQuote,
+  draftReply,
+  replyAuthor,
+  sharedWithOthers,
   truncate,
+  type CommentReply,
   type CommentStatus,
   type DocKind,
   type ReviewComment,
@@ -17,10 +22,13 @@ import { DrawingPreview } from "./drawing-preview";
 
 const SECTIONS: { status: CommentStatus; title: string; hint: string }[] = [
   { status: "replied", title: "Needs you", hint: "The agent answered instead of changing the file." },
-  { status: "draft", title: "Drafts", hint: "Not sent yet." },
+  { status: "draft", title: "Drafts", hint: "Not sent yet: comments and your replies go out together." },
   { status: "sent", title: "Waiting for the agent", hint: "" },
   { status: "resolved", title: "Done", hint: "" },
 ];
+
+const COMMENT_PLACEHOLDER = "What should change here?";
+const REPLY_PLACEHOLDER = "Answer the agent";
 
 const STATUS_LABEL: Record<CommentStatus, string> = {
   draft: "Draft",
@@ -34,6 +42,9 @@ export interface CommentActions {
   onEdit: (comment: ReviewComment, body: string) => Promise<void>;
   onDelete: (comment: ReviewComment) => void;
   onReopen: (comment: ReviewComment) => void;
+  /** Writes the user's answer in the thread, or replaces the unsent one. */
+  onReply: (comment: ReviewComment, body: string) => Promise<void>;
+  onDiscardReply: (comment: ReviewComment) => void;
   onAddGeneral: (body: string) => Promise<void>;
 }
 
@@ -63,6 +74,41 @@ function IconButton({
   );
 }
 
+function ReplyBubble({
+  reply,
+  highlight,
+  onDiscard,
+}: {
+  reply: CommentReply;
+  /** The agent's answer the user still has to respond to. */
+  highlight: boolean;
+  onDiscard?: () => void;
+}) {
+  const draft = reply.author === "user" && reply.sentAt === null;
+  return (
+    <div
+      className={cn(
+        "mt-2 rounded-md px-2 py-1.5 text-xs",
+        reply.author === "agent"
+          ? highlight
+            ? "bg-primary/10 text-foreground"
+            : "bg-muted text-muted-foreground"
+          : cn("ml-4 border text-foreground", draft ? "border-dashed border-primary/50" : "border-border"),
+      )}
+    >
+      <div className="flex items-start gap-1">
+        <p className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+          <span className="font-medium">{replyAuthor(reply)}:</span>{" "}
+          {reply.body}
+        </p>
+        {onDiscard ? (
+          <IconButton icon="X" label="Discard reply" onClick={onDiscard} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function CommentCard({
   comment,
   kind,
@@ -79,9 +125,43 @@ function CommentCard({
   actions: CommentActions;
 }) {
   const [editing, setEditing] = useState(false);
+  const [replying, setReplying] = useState(false);
   const [busy, setBusy] = useState(false);
   const card = useRef<HTMLDivElement>(null);
   const quote = anchorQuote(comment.anchor);
+  const pending = draftReply(comment);
+  const sentThread = pending ? comment.thread.slice(0, -1) : comment.thread;
+  // The pencil edits the unsent reply, or the comment while nobody answered it.
+  // Another reviewer's comment is this user's copy to adjust before passing it on.
+  const others = sharedWithOthers(comment);
+  const editable = pending !== null || ((comment.thread.length === 0 || others) && comment.status !== "resolved");
+  const canReply = comment.status === "replied" || comment.status === "resolved" || (others && pending === null);
+  const lastName = comment.thread.filter((reply) => reply.name !== null).at(-1)?.name ?? comment.author;
+  const replyPlaceholder = others && comment.status === "draft" && lastName ? `Answer ${lastName}` : REPLY_PLACEHOLDER;
+  const editor = (options: {
+    initial: string;
+    submitLabel: string;
+    placeholder: string;
+    save: (body: string) => Promise<void>;
+    close: () => void;
+  }) => (
+    <CommentEditor
+      className="mt-2 shadow-none"
+      initial={options.initial}
+      submitLabel={options.submitLabel}
+      placeholder={options.placeholder}
+      busy={busy}
+      onCancel={options.close}
+      onSubmit={(body) => {
+        setBusy(true);
+        // A failed save keeps the editor open with the text; the toast says why.
+        options
+          .save(body)
+          .then(options.close, () => undefined)
+          .finally(() => setBusy(false));
+      }}
+    />
+  );
 
   useEffect(() => {
     if (active) card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -118,10 +198,22 @@ function CommentCard({
         </span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {anchorLabel(comment.anchor, kind)} · {STATUS_LABEL[comment.status]}
+          {comment.author ? (
+            <span
+              className="ml-1.5 font-medium text-foreground"
+              title={comment.originFile ? `Written on ${comment.originFile}` : undefined}
+            >
+              {comment.author}
+            </span>
+          ) : null}
         </span>
         <div className="flex shrink-0 items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-          {comment.status !== "resolved" ? (
-            <IconButton icon="Edit" label="Edit comment" onClick={() => setEditing(true)} />
+          {editable ? (
+            <IconButton
+              icon="Edit"
+              label={pending ? "Edit reply" : "Edit comment"}
+              onClick={() => setEditing(true)}
+            />
           ) : null}
           {comment.status !== "draft" ? (
             <IconButton
@@ -140,33 +232,65 @@ function CommentCard({
           {truncate(quote, 240)}
         </div>
       ) : null}
-      {editing ? (
-        <CommentEditor
-          className="mt-2 shadow-none"
-          initial={comment.body}
-          submitLabel="Save"
-          busy={busy}
-          onCancel={() => setEditing(false)}
-          onSubmit={(body) => {
-            setBusy(true);
-            actions
-              .onEdit(comment, body)
-              .then(() => setEditing(false))
-              .finally(() => setBusy(false));
-          }}
-        />
+      {editing && !pending ? (
+        editor({
+          initial: comment.body,
+          submitLabel: "Save",
+          placeholder: COMMENT_PLACEHOLDER,
+          save: (body) => actions.onEdit(comment, body),
+          close: () => setEditing(false),
+        })
       ) : (
         <p className="mt-1.5 whitespace-pre-wrap break-words">{comment.body}</p>
       )}
-      {comment.agentNote ? (
-        <div
-          className={cn(
-            "mt-2 rounded-md px-2 py-1.5 text-xs",
-            comment.status === "replied" ? "bg-primary/10 text-foreground" : "bg-muted text-muted-foreground",
-          )}
-        >
-          <span className="font-medium">Agent:</span> {comment.agentNote}
-        </div>
+      {sentThread.map((reply, index) => (
+        <ReplyBubble
+          key={reply.id}
+          reply={reply}
+          highlight={comment.status === "replied" && index === sentThread.length - 1}
+        />
+      ))}
+      {pending ? (
+        editing ? (
+          editor({
+            initial: pending.body,
+            submitLabel: "Save",
+            placeholder: replyPlaceholder,
+            save: (body) => actions.onReply(comment, body),
+            close: () => setEditing(false),
+          })
+        ) : (
+          <ReplyBubble
+            reply={pending}
+            highlight={false}
+            onDiscard={() => actions.onDiscardReply(comment)}
+          />
+        )
+      ) : null}
+      {canReply ? (
+        replying ? (
+          editor({
+            initial: "",
+            submitLabel: "Reply",
+            placeholder: replyPlaceholder,
+            save: (body) => actions.onReply(comment, body),
+            close: () => setReplying(false),
+          })
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-1 h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation();
+              setReplying(true);
+            }}
+          >
+            <Icon name="Reply" className="size-3.5" />
+            Reply
+          </Button>
+        )
       ) : null}
       {(stale || detached) && comment.status !== "resolved" ? (
         <div className="mt-1.5 text-[11px] text-muted-foreground">
@@ -232,7 +356,9 @@ export function CommentList({
       )}
       {comments.length === 0 ? (
         <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-          {kind === "spreadsheet"
+          {kind === "web"
+            ? "Open the site in bb's browser in the desktop app and press Review beside the address bar to comment on its pages."
+            : kind === "spreadsheet"
             ? "Click a cell or drag over a range to comment on it."
             : kind === "html"
               ? "Select text to comment on it. Switch to Element to click a block, button, or picture, or to Draw to mark up the page."

@@ -26,7 +26,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { Capture } from "../src/contract";
-import { DRAW_COLOR, DRAW_STEP, DRAW_WIDTH, strokeBounds, strokePath } from "../src/drawing";
+import { DRAW_COLOR, DRAW_STEP, DRAW_WIDTH, isShape, strokeBounds, strokeKept, strokePath } from "../src/drawing";
 import {
   pageImageWidth,
   pageNoun,
@@ -507,7 +507,7 @@ function DrawLayer({
           const at = pointAt(event.clientX, event.clientY);
           const p = active.stroke.points;
           let points: number[];
-          if (active.stroke.tool === "arrow") points = [p[0]!, p[1]!, at.x, at.y];
+          if (isShape(active.stroke.tool)) points = [p[0]!, p[1]!, at.x, at.y];
           else {
             const n = p.length;
             const moved = Math.abs(at.x - p[n - 2]!) * at.box.width + Math.abs(at.y - p[n - 1]!) * at.box.height;
@@ -528,11 +528,8 @@ function DrawLayer({
           setStroke(null);
           const box = pageElement.current?.getBoundingClientRect();
           const p = active.stroke.points;
-          if (active.stroke.tool === "arrow") {
-            // An arrow needs a direction; a click in arrow mode draws nothing.
-            const length = box && p.length >= 4 ? Math.abs(p[2]! - p[0]!) * box.width + Math.abs(p[3]! - p[1]!) * box.height : 0;
-            if (length < 8) return;
-          }
+          // A click with a shape tool draws nothing.
+          if (!box || !strokeKept(active.stroke, box.width, box.height)) return;
           onStroke(page.n, p.length === 2 ? { ...active.stroke, points: [...p, ...p] } : active.stroke);
         }}
         onPointerCancel={cancel}
@@ -608,7 +605,11 @@ const PageView = memo(function PageView({
       const anchor = comment.anchor;
       if (anchor.kind === "page-text") return anchor.rects.some((part) => contains(part, x, y));
       if (anchor.kind === "page-area") return contains(anchor.rect, x, y);
-      if (anchor.kind === "page-drawing") return contains(boundsRect(anchor.strokes), x, y);
+      if (anchor.kind === "page-drawing") {
+        // A straight line has no height (or width) to click on: give it some.
+        const b = boundsRect(anchor.strokes);
+        return contains({ x: b.x - 0.01, y: b.y - 0.01, w: b.w + 0.02, h: b.h + 0.02 }, x, y);
+      }
       return false;
     });
     if (hit) onSelectComment(hit.id);
@@ -1456,6 +1457,7 @@ export function PagesDoc({
             return (
               <DrawingBar
                 point={clampToView(toRoot(pageElement, rect.x + rect.w, rect.y + rect.h), 240)}
+                strokes={sketch.strokes.length}
                 onComment={commentOnSketch}
                 onUndo={undoStroke}
                 onClear={() => setSketch(null)}

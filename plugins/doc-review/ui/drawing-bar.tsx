@@ -1,15 +1,19 @@
 // The small bar under a drawing in progress: comment on it, take back the
-// last stroke, or start over.
+// last stroke, or start over. With one stroke the two would do the same, so
+// only Clear shows.
 import { Icon } from "@/components/ui/icon";
 import type { Point } from "./markdown-doc";
 
 export function DrawingBar({
   point,
+  strokes,
   onComment,
   onUndo,
   onClear,
 }: {
   point: Point;
+  /** Strokes drawn so far. */
+  strokes: number;
   onComment: () => void;
   onUndo: () => void;
   onClear: () => void;
@@ -36,23 +40,25 @@ export function DrawingBar({
         <Icon name="MessageSquarePlus" className="size-3.5" />
         Comment
       </button>
+      {strokes > 1 ? (
+        <button
+          type="button"
+          className="inline-flex size-7 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label="Undo the last stroke"
+          title="Undo the last stroke (⌘Z)"
+          onClick={(event) => {
+            event.stopPropagation();
+            onUndo();
+          }}
+        >
+          <Icon name="ArrowTurnBackward" className="size-3.5" />
+        </button>
+      ) : null}
       <button
         type="button"
         className="inline-flex size-7 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-accent hover:text-foreground"
-        aria-label="Undo the last stroke"
-        title="Undo the last stroke (⌘Z)"
-        onClick={(event) => {
-          event.stopPropagation();
-          onUndo();
-        }}
-      >
-        <Icon name="ArrowTurnBackward" className="size-3.5" />
-      </button>
-      <button
-        type="button"
-        className="inline-flex size-7 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-accent hover:text-foreground"
-        aria-label="Clear the drawing"
-        title="Clear the drawing"
+        aria-label="Clear the whole drawing"
+        title="Clear the whole drawing"
         onClick={(event) => {
           event.stopPropagation();
           onClear();

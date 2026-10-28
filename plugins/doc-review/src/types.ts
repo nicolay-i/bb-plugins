@@ -10,8 +10,10 @@ import { documentFamily, extensionOf } from "../lib/formats.js";
  *   to PDF by LibreOffice, then shown as pages.
  * - `spreadsheet` (Excel, ODS): a grid of cells.
  * - `html`: a web page, rendered live in a sandboxed frame.
+ * - `web`: a live site opened in bb's own browser, one document per origin;
+ *   its `absPath` is the origin and each comment names its page.
  */
-export type DocKind = "md" | "pdf" | "text" | "presentation" | "spreadsheet" | "html";
+export type DocKind = "md" | "pdf" | "text" | "presentation" | "spreadsheet" | "html" | "web";
 
 /** The `sandbox` flags for an HTML page's frame, also sent as a CSP header with the page. */
 export const HTML_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals allow-downloads";
@@ -31,18 +33,26 @@ export interface Rect {
   h: number;
 }
 
-/**
- * One stroke of a drawing: a freehand line (`pen`), or a straight arrow from
- * its first point to its last. Points are flat `[x0, y0, x1, y1, …]`: on a
- * page, fractions of the page size; on an HTML page, CSS pixels from the top
- * left of the page as it scrolls.
- */
-export interface Stroke {
-  tool: "pen" | "arrow";
-  points: number[];
+/** Drawing tools, in the order the toolbar shows them. */
+export const DRAW_TOOLS = ["pen", "line", "arrow", "rect"] as const;
+
+export type DrawTool = (typeof DRAW_TOOLS)[number];
+
+export function isDrawTool(value: unknown): value is DrawTool {
+  return (DRAW_TOOLS as readonly unknown[]).includes(value);
 }
 
-export type DrawTool = Stroke["tool"];
+/**
+ * One stroke of a drawing: a freehand line (`pen`); or a shape set by two
+ * points, its first and its last: a straight `line`, an `arrow` pointing at
+ * the last point, or a `rect` with those two corners. Points are flat
+ * `[x0, y0, x1, y1, …]`: on a page, fractions of the page size; on an HTML
+ * page, CSS pixels from the top left of the page as it scrolls.
+ */
+export interface Stroke {
+  tool: DrawTool;
+  points: number[];
+}
 
 /**
  * What a stroke on an HTML page touches:
@@ -109,6 +119,8 @@ export type Anchor =
        * first, joined by " >>> ". The selector then describes the page inside.
        */
       frame?: string;
+      /** On a live site: the page the comment was left on. */
+      url?: string;
     }
   | {
       kind: "html-element";
@@ -122,6 +134,8 @@ export type Anchor =
       html: string;
       /** Set when the element is inside a frame, as for `html-text`. */
       frame?: string;
+      /** On a live site: the page the comment was left on. */
+      url?: string;
     }
   | { kind: "page-drawing"; page: number; strokes: Stroke[]; text: string }
   | {
@@ -130,6 +144,8 @@ export type Anchor =
       /** The page's viewport when it was drawn on: the layout the strokes match. */
       viewport: { w: number; h: number };
       marks: DrawMark[];
+      /** On a live site: the page the comment was left on. */
+      url?: string;
     };
 
 /**
@@ -140,6 +156,28 @@ export type Anchor =
  */
 export type CommentStatus = "draft" | "sent" | "replied" | "resolved";
 
+/**
+ * One message in a comment's thread after the comment itself: the agent's
+ * answer or note, or the user's reply to it.
+ */
+export interface CommentReply {
+  id: string;
+  author: "user" | "agent";
+  /**
+   * Set when the reply came from another reviewer's file: their name, or for
+   * an agent, the reviewer whose agent wrote it. Null for this bb's own.
+   */
+  name: string | null;
+  /** The reply's id in the review it was imported from. */
+  originId: string | null;
+  body: string;
+  /** For the agent: whether it answered (`replied`) or closed the comment (`resolved`). */
+  outcome: "replied" | "resolved" | null;
+  createdAt: number;
+  /** When a user reply went to the agent; null while it is a draft. Agent notes carry their time. */
+  sentAt: number | null;
+}
+
 export interface ReviewComment {
   id: string;
   /** Display number within the document: #1, #2, … */
@@ -147,6 +185,12 @@ export interface ReviewComment {
   status: CommentStatus;
   anchor: Anchor;
   body: string;
+  /** Who wrote it, when it came from another reviewer's file; null for this bb's user. */
+  author: string | null;
+  /** The comment's id in the review it was imported from. */
+  originId: string | null;
+  /** The file it was written on, when that is another file (an imported PDF's source). */
+  originFile: string | null;
   /** Document version the comment was written against. */
   docVersion: string | null;
   createdAt: number;
@@ -156,6 +200,8 @@ export interface ReviewComment {
   /** The agent's latest note: what it changed, or its question. */
   agentNote: string | null;
   resolvedAt: number | null;
+  /** Messages after the comment, oldest first; an unsent reply of the user comes last. */
+  thread: CommentReply[];
   /** The picture a drawing went with, served to the panel; absent without one. */
   imageUrl?: string;
 }
@@ -219,6 +265,18 @@ export function pageNoun(kind: DocKind): "Slide" | "Page" {
 
 /** A short human label for where a comment points. */
 export function anchorLabel(anchor: Anchor, kind: DocKind): string {
+  const label = placeLabel(anchor, kind);
+  // On a live site the page tells comments apart as much as the place does.
+  const page = kind === "web" ? anchorPage(anchor) : null;
+  if (!page) return label;
+  try {
+    return `${label}, ${new URL(page).pathname}`;
+  } catch {
+    return label;
+  }
+}
+
+function placeLabel(anchor: Anchor, kind: DocKind): string {
   switch (anchor.kind) {
     case "doc":
       return "Whole document";
@@ -269,6 +327,50 @@ export function squash(text: string): string {
 
 export function isDrawing(anchor: Anchor): anchor is Extract<Anchor, { kind: "page-drawing" | "html-drawing" }> {
   return anchor.kind === "page-drawing" || anchor.kind === "html-drawing";
+}
+
+/** The user's reply waiting to be sent, if any. */
+export function draftReply(comment: ReviewComment): CommentReply | null {
+  const last = comment.thread[comment.thread.length - 1];
+  return last && last.author === "user" && last.sentAt === null ? last : null;
+}
+
+export type PageAnchor = Extract<Anchor, { kind: "page-text" | "page-area" | "page-drawing" }>;
+
+export function isPageAnchor(anchor: Anchor): anchor is PageAnchor {
+  return anchor.kind === "page-text" || anchor.kind === "page-area" || anchor.kind === "page-drawing";
+}
+
+/**
+ * Whether other reviewers are in on a comment: they wrote it, or answered it
+ * in a PDF that came back. Such a comment takes replies even as a draft.
+ */
+export function sharedWithOthers(comment: ReviewComment): boolean {
+  return comment.author !== null || comment.thread.some((reply) => reply.name !== null);
+}
+
+/** Who wrote a reply, as the comment list and the agent read it. */
+export function replyAuthor(reply: CommentReply): string {
+  if (reply.author === "agent") return reply.name ? `${reply.name}'s agent` : "Agent";
+  if (reply.name) return reply.name;
+  return reply.sentAt === null ? "You, not sent" : "You";
+}
+
+/** The page of a live site a comment was left on, if it has one. */
+export function anchorPage(anchor: Anchor): string | null {
+  return "url" in anchor && typeof anchor.url === "string" ? anchor.url : null;
+}
+
+/** A live site's pages are the same page whatever their query or hash says. */
+export function samePage(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    const path = (url: URL) => url.pathname.replace(/\/+$/, "") || "/";
+    return left.origin === right.origin && path(left) === path(right);
+  } catch {
+    return false;
+  }
 }
 
 export function truncate(text: string, max: number): string {

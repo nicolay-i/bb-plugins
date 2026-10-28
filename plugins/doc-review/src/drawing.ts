@@ -3,7 +3,7 @@
 // TypeScript functions; pages served into the review frame and the headless
 // browser get the same code as ES2019 text (DRAWING_JS), which the tests keep
 // in step with the TypeScript.
-import type { Stroke } from "./types.js";
+import type { DrawTool, Stroke } from "./types.js";
 
 /** Strokes are red so they stand out from the blue of comment highlights. */
 export const DRAW_COLOR = "#e5484d";
@@ -37,15 +37,44 @@ export function strokeBounds(strokes: readonly Stroke[]): Bounds | null {
   return bounds;
 }
 
+/** Tools whose stroke is set by its first and last point, not by the path between. */
+export function isShape(tool: DrawTool): boolean {
+  return tool === "line" || tool === "arrow" || tool === "rect";
+}
+
 /**
- * The SVG path of a stroke, scaled by `sx` and `sy`. An arrow is a straight
- * line from the first point to the last with a head `head` units long.
+ * Whether a finished stroke is big enough to keep, by its size in screen
+ * pixels (`w` and `h` scale its points). A pen tap is a dot; a shape needs
+ * a direction (a line or an arrow) or room (a box).
+ */
+export function strokeKept(stroke: Stroke, w: number, h: number): boolean {
+  if (!isShape(stroke.tool)) return true;
+  const p = stroke.points;
+  const n = p.length;
+  if (n < 4) return false;
+  const dx = Math.abs(p[n - 2]! - p[0]!) * w;
+  const dy = Math.abs(p[n - 1]! - p[1]!) * h;
+  return stroke.tool === "rect" ? dx >= 6 && dy >= 6 : dx + dy >= 8;
+}
+
+/**
+ * The SVG path of a stroke, scaled by `sx` and `sy`. A line, an arrow, and a
+ * box use the first point and the last; an arrow gets a head `head` units
+ * long at the last.
  */
 export function strokePath(stroke: Stroke, sx: number, sy: number, head: number): string {
   const p = stroke.points;
   const n = p.length;
   if (n < 2) return "";
   const r = (value: number) => Math.round(value * 100) / 100;
+  if (stroke.tool === "line" || stroke.tool === "rect") {
+    const x0 = r(p[0]! * sx);
+    const y0 = r(p[1]! * sy);
+    const x1 = r(p[n - 2]! * sx);
+    const y1 = r(p[n - 1]! * sy);
+    if (stroke.tool === "line") return `M${x0} ${y0}L${x1} ${y1}`;
+    return `M${x0} ${y0}L${x1} ${y0}L${x1} ${y1}L${x0} ${y1}Z`;
+  }
   if (stroke.tool === "arrow") {
     const x0 = p[0]! * sx;
     const y0 = p[1]! * sy;
@@ -67,10 +96,21 @@ export function strokePath(stroke: Stroke, sx: number, sy: number, head: number)
 }
 
 /**
- * `drawingPaths(strokes, sx, sy, head)` and `drawingBounds(strokes)` as
- * ES2019 function declarations, for pages and the headless browser.
+ * `drawingPath(stroke, sx, sy, head)`, `drawingBounds(strokes)`,
+ * `drawingShape(tool)`, and `drawingKept(stroke, w, h)` as ES2019 function
+ * declarations, for pages and the headless browser.
  */
 export const DRAWING_JS = String.raw`
+  function drawingShape(tool) { return tool === "line" || tool === "arrow" || tool === "rect"; }
+  function drawingKept(stroke, w, h) {
+    if (!drawingShape(stroke.tool)) return true;
+    var p = stroke.points;
+    var n = p.length;
+    if (n < 4) return false;
+    var dx = Math.abs(p[n - 2] - p[0]) * w;
+    var dy = Math.abs(p[n - 1] - p[1]) * h;
+    return stroke.tool === "rect" ? dx >= 6 && dy >= 6 : dx + dy >= 8;
+  }
   function drawingBounds(strokes) {
     var bounds = null;
     for (var s = 0; s < strokes.length; s += 1) {
@@ -92,6 +132,11 @@ export const DRAWING_JS = String.raw`
     var n = p.length;
     if (n < 2) return "";
     var r = function (value) { return Math.round(value * 100) / 100; };
+    if (stroke.tool === "line" || stroke.tool === "rect") {
+      var ax = r(p[0] * sx), ay = r(p[1] * sy), bx = r(p[n - 2] * sx), by = r(p[n - 1] * sy);
+      if (stroke.tool === "line") return "M" + ax + " " + ay + "L" + bx + " " + by;
+      return "M" + ax + " " + ay + "L" + bx + " " + ay + "L" + bx + " " + by + "L" + ax + " " + by + "Z";
+    }
     if (stroke.tool === "arrow") {
       var x0 = p[0] * sx, y0 = p[1] * sy, x1 = p[n - 2] * sx, y1 = p[n - 1] * sy;
       var angle = Math.atan2(y1 - y0, x1 - x0);

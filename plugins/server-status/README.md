@@ -8,11 +8,17 @@ button.
 - **Click** — a panel with the full summary. Closes on Escape, on a click
   outside, or on a second click of the button.
 
+<img src="../../media/server-status/panel.gif" width="500" alt="A click on the ring opens the server summary; Escape closes it">
+
 The panel shows the CPU with its core count, memory in percent and gigabytes,
 swap as a separate row with a warning, disk (used, total, free), load average
 over 1, 5 and 15 minutes, uptime with the date of the last boot, and the OS and
 kernel version. Sizes print in gigabytes, and in terabytes past a terabyte, one
 unit per row.
+
+<img src="../../media/server-status/panel.png" width="500" alt="The panel: CPU, memory, swap and disk bars, load average, uptime and last reboot">
+
+*The pictures show sample figures, not a real machine.*
 
 The ring repeats the geometry of the [usage-meter](../usage-meter) plugin — same
 thickness, same radius, same animation. The two buttons sit next to each other
